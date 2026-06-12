@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 340px; margin: 0; padding: 12px; background: #1c1b22; color: #fff;
+           font: 13px system-ui, sans-serif; }
+    header { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+    header img { width: 26px; height: 26px; }
+    header .title { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+    header .by { margin-left: auto; font-size: 10px; opacity: .4; text-transform: uppercase;
+                 letter-spacing: .5px; }
+    h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; opacity: .55;
+         margin: 14px 2px 8px; }
+    .row { display: flex; align-items: center; gap: 6px; padding: 6px; background: #2b2a33;
+           border-radius: 8px; margin-bottom: 5px; }
+    .row.active { box-shadow: inset 0 0 0 2px #0060df; }
+    .row .icon { width: 34px; text-align: center; font-size: 16px; background: #42414d;
+                 border: none; border-radius: 6px; color: #fff; padding: 6px 0; cursor: pointer; }
+    .row .name { flex: 1; min-width: 0; background: #42414d; border: none; border-radius: 6px;
+                 color: #fff; padding: 7px; font: inherit; }
+    .row .count { opacity: .5; font-size: 11px; min-width: 28px; text-align: right; }
+    .row button { background: #42414d; border: none; border-radius: 6px; color: #fff;
+                  cursor: pointer; padding: 6px 7px; font: inherit; }
+    .row button:hover:not(:disabled) { background: #52525e; }
+    .row button:disabled { opacity: .3; cursor: default; }
+    .row .del { background: #5a2a2a; }
+    .row .del:hover:not(:disabled) { background: #7a3434; }
+    .row .open:not(:disabled) { background: #0060df; }
+    .addbar { display: flex; gap: 6px; margin-top: 8px; }
+    .addbar .icon { width: 44px; text-align: center; cursor: pointer; }
+    .addbar input { background: #2b2a33; border: 1px solid #42414d; border-radius: 6px;
+                    color: #fff; padding: 7px; font: inherit; min-width: 0; }
+    .addbar .name { flex: 1; }
+    .addbar .go, .primary { background: #0060df; border: none; border-radius: 6px; color: #fff;
+                            cursor: pointer; padding: 7px 12px; font: inherit; }
+    .addbar .go:hover, .primary:hover { background: #0250bb; }
+    .reset { width: 100%; margin-top: 10px; background: #0060df; border: none; border-radius: 6px;
+             color: #fff; cursor: pointer; padding: 8px; font: inherit; }
+    .reset:hover { background: #0250bb; }
+    /* icon palette popover */
+    #palette { position: absolute; z-index: 50; display: none; flex-wrap: wrap; gap: 2px;
+               width: 256px; max-height: 240px; overflow-y: auto; padding: 6px;
+               background: #34333c; border: 1px solid #52525e; border-radius: 8px;
+               box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+    #palette button { width: 26px; height: 26px; font-size: 15px; background: none; border: none;
+                      border-radius: 5px; cursor: pointer; line-height: 1; }
+    #palette button:hover { background: #52525e; }
+    #palette .pal-head { flex-basis: 100%; font-size: 10px; text-transform: uppercase;
+                         letter-spacing: .5px; opacity: .45; padding: 7px 2px 3px;
+                         border-top: 1px solid #4a4954; margin-top: 3px; }
+    #palette .pal-head:first-child { border-top: none; margin-top: 0; padding-top: 2px; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="icon-48.png" alt="">
+    <span class="title">Houdini</span>
+    <span class="by">Panels</span>
+  </header>
+
+  <h2>Panels — click Open to switch</h2>
+  <div id="list"></div>
+  <div class="addbar">
+    <input class="icon" id="newIcon" value="📄" maxlength="4" title="Click to pick an icon">
+    <input class="name" id="newName" placeholder="New panel name">
+    <button class="go" id="addBtn">Add</button>
+  </div>
+
+  <button class="reset" id="manageBtn">Import from Sidebery / Reset…</button>
+
+  <div id="palette"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

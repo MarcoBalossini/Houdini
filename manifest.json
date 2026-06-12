@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Houdini",
+  "version": "0.2",
+  "description": "Sidebery-style tab panels for Firefox.",
+  "permissions": [
+    "tabs",
+    "tabHide",
+    "sessions",
+    "storage"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "houdini@local"
+    }
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Switch Tab Panels",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png"
+    }
+  },
+  "options_ui": {
+    "page": "manage.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "scripts": ["background.js"]
+  }
+}
