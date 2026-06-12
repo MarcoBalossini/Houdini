@@ -576,10 +576,49 @@ function notifyChanged() {
   browser.runtime.sendMessage({ type: 'houdini:changed' }).catch(() => {});
 }
 
-// Tag every new tab with the currently active panel.
+// --- Tab grouping ---------------------------------------------------------
+
+// True only if this Firefox exposes the WebExtension tab-groups API.
+function tabGroupsSupported() {
+  return !!(browser.tabs && browser.tabs.group && browser.tabGroups);
+}
+
+async function getGroupSubtabs() {
+  const d = await browser.storage.local.get('groupSubtabs');
+  return d.groupSubtabs === true;
+}
+
+// Put a freshly opened sub-tab into its opener's group (one level, flattened).
+// If the opener isn't grouped yet, start a group from [opener, child].
+async function groupSubtab(tab) {
+  if (!tabGroupsSupported()) return;
+  if (tab.openerTabId == null) return;
+  let opener;
+  try { opener = await browser.tabs.get(tab.openerTabId); }
+  catch { return; } // opener already gone
+  if (opener.windowId !== tab.windowId) return;
+
+  // Stay within one panel: skip if opener belongs to a different panel.
+  const childPanel = await browser.sessions.getTabValue(tab.id, 'panel');
+  const openerPanel = await browser.sessions.getTabValue(opener.id, 'panel');
+  if (childPanel && openerPanel && childPanel !== openerPanel) return;
+
+  try {
+    if (opener.groupId != null && opener.groupId !== -1) {
+      await browser.tabs.group({ groupId: opener.groupId, tabIds: tab.id });
+    } else {
+      const gid = await browser.tabs.group({ tabIds: [opener.id, tab.id] });
+      const title = (opener.title || '').slice(0, 20);
+      if (title) await browser.tabGroups.update(gid, { title });
+    }
+  } catch { /* grouping is best-effort; ignore failures */ }
+}
+
+// Tag every new tab with the currently active panel; group sub-tabs if enabled.
 browser.tabs.onCreated.addListener(async (tab) => {
   const { activePanel } = await getPanels();
   await browser.sessions.setTabValue(tab.id, 'panel', activePanel);
+  if (await getGroupSubtabs()) await groupSubtab(tab);
 });
 
 browser.runtime.onMessage.addListener(async (msg) => {
@@ -605,6 +644,8 @@ browser.runtime.onMessage.addListener(async (msg) => {
       return { snapshots: snapData.snapshots || [], ...snapSettings };
     }
     case 'updateSnapshotSettings': return updateSnapshotSettings(msg.period, msg.maxSnapshots);
+    case 'getGroupSetting': return { enabled: await getGroupSubtabs(), supported: tabGroupsSupported() };
+    case 'setGroupSetting': return browser.storage.local.set({ groupSubtabs: msg.enabled === true });
     case 'exportData':   return exportData();
     case 'importData':   return importData(msg.data);
     case 'listPanelTabs': return listPanelTabs(msg.panelId);
