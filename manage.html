@@ -31,6 +31,22 @@
     pre { background: #111017; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px;
           white-space: pre-wrap; }
     code { background: #111017; padding: 1px 5px; border-radius: 4px; }
+    .snap-settings { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .snap-settings label { display: flex; align-items: center; gap: 6px; }
+    .snap-settings input[type=number] { width: 64px; background: #1c1b22; border: 1px solid #42414d;
+      border-radius: 6px; color: #fff; padding: 6px 8px; font: inherit; }
+    #snapList { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .snap-item { background: #1c1b22; border-radius: 8px; padding: 10px 14px;
+                 display: flex; align-items: center; gap: 10px; }
+    .snap-item-info { flex: 1; }
+    .snap-item-time { font-weight: 600; font-size: 13px; }
+    .snap-item-meta { opacity: .6; font-size: 12px; margin-top: 2px; }
+    .danger { background: #5a2a2a; border: none; border-radius: 6px; color: #fff; cursor: pointer;
+              padding: 6px 12px; font: inherit; font-size: 12px; }
+    .danger:hover { background: #7a3434; }
+    .secondary { background: #42414d; border: none; border-radius: 6px; color: #fff; cursor: pointer;
+                 padding: 6px 12px; font: inherit; font-size: 12px; }
+    .secondary:hover { background: #57565e; }
   </style>
 </head>
 <body>
@@ -57,6 +73,19 @@
          no tabs.</p>
       <pre id="snippet"></pre>
     </details>
+  </div>
+
+  <h2>Automatic Snapshots</h2>
+  <div class="card">
+    <p>Houdini periodically saves your panels and tab assignments. Roll back to any saved point.</p>
+    <div class="snap-settings">
+      <label>Every <input type="number" id="snapPeriod" min="1" max="168"> hours</label>
+      <label>Keep <input type="number" id="snapMax" min="1" max="200"> snapshots max</label>
+      <button class="primary" id="snapSaveBtn">Save settings</button>
+      <button class="secondary" id="snapNowBtn">Snapshot now</button>
+    </div>
+    <div id="snapResult"></div>
+    <div id="snapList"></div>
   </div>
 
   <h2>Reset</h2>

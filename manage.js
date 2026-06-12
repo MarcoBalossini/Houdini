@@ -41,6 +41,86 @@ document.getElementById('resetBtn').addEventListener('click', async () => {
   out.textContent = 'Reset done.';
 });
 
+// --- Snapshots -----------------------------------------------------------
+
+const snapResult = document.getElementById('snapResult');
+
+function fmtTime(ts) {
+  return new Date(ts).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function renderSnapshots(snapshots) {
+  const list = document.getElementById('snapList');
+  if (!snapshots.length) {
+    list.innerHTML = '<p style="opacity:.5;font-size:12px;margin:0">No snapshots yet.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  // Newest first
+  [...snapshots].reverse().forEach((snap, revIdx) => {
+    const idx = snapshots.length - 1 - revIdx;
+    const el = document.createElement('div');
+    el.className = 'snap-item';
+    el.innerHTML = `
+      <div class="snap-item-info">
+        <div class="snap-item-time">${fmtTime(snap.timestamp)}</div>
+        <div class="snap-item-meta">${snap.panels.length} panel(s) · ${snap.tabAssignments.length} tab(s)</div>
+      </div>
+      <button class="secondary snap-rollback" data-idx="${idx}">Rollback</button>
+      <button class="danger snap-delete" data-idx="${idx}">✕</button>
+    `;
+    list.appendChild(el);
+  });
+
+  list.querySelectorAll('.snap-rollback').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      if (!confirm(`Roll back to snapshot from ${fmtTime(snapshots[idx].timestamp)}?\nThis replaces current panels and re-tags all tabs.`)) return;
+      const res = await send({ cmd: 'rollbackSnapshot', index: idx });
+      snapResult.className = res.ok ? 'ok' : 'err';
+      snapResult.textContent = res.ok ? 'Rolled back.' : (res.error || 'Rollback failed.');
+      await loadSnapshots();
+    });
+  });
+
+  list.querySelectorAll('.snap-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      const res = await send({ cmd: 'deleteSnapshot', index: idx });
+      if (res.ok) await loadSnapshots();
+    });
+  });
+}
+
+async function loadSnapshots() {
+  const res = await send({ cmd: 'getSnapshots' });
+  document.getElementById('snapPeriod').value = res.period;
+  document.getElementById('snapMax').value = res.maxSnapshots;
+  renderSnapshots(res.snapshots);
+}
+
+document.getElementById('snapSaveBtn').addEventListener('click', async () => {
+  const period = document.getElementById('snapPeriod').value;
+  const maxSnapshots = document.getElementById('snapMax').value;
+  await send({ cmd: 'updateSnapshotSettings', period, maxSnapshots });
+  snapResult.className = 'ok';
+  snapResult.textContent = 'Settings saved.';
+  setTimeout(() => { snapResult.textContent = ''; }, 2000);
+});
+
+document.getElementById('snapNowBtn').addEventListener('click', async () => {
+  const res = await send({ cmd: 'takeSnapshot' });
+  snapResult.className = res.ok ? 'ok' : 'err';
+  snapResult.textContent = res.ok ? 'Snapshot saved.' : 'Snapshot failed.';
+  if (res.ok) await loadSnapshots();
+});
+
+loadSnapshots();
+
+// --- Sidebery import snippet ---------------------------------------------
+
 document.getElementById('snippet').textContent =
 `(async () => {
   const d = await browser.storage.local.get(['sidebar','tabsDataCache','snapshots','ver']);

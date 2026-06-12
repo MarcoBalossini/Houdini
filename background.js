@@ -274,6 +274,151 @@ function sideberyIcon(p) {
   return '📄';
 }
 
+// --- Snapshots ------------------------------------------------------------
+
+const DEFAULT_SNAPSHOT_PERIOD = 1; // hours
+const DEFAULT_MAX_SNAPSHOTS = 10;
+const ALARM_NAME = 'houdini-snapshot';
+
+async function getSnapshotSettings() {
+  const data = await browser.storage.local.get(['snapshotPeriod', 'maxSnapshots']);
+  return {
+    period: data.snapshotPeriod ?? DEFAULT_SNAPSHOT_PERIOD,
+    maxSnapshots: data.maxSnapshots ?? DEFAULT_MAX_SNAPSHOTS
+  };
+}
+
+async function takeSnapshot() {
+  const { panels, activePanel } = await getPanels();
+  const { maxSnapshots } = await getSnapshotSettings();
+
+  const tabs = await browser.tabs.query({});
+  const tabAssignments = [];
+  for (const tab of tabs) {
+    const panelId = await browser.sessions.getTabValue(tab.id, 'panel');
+    if (panelId) tabAssignments.push({ url: normalizeUrl(tab.url), panelId });
+  }
+
+  const snapshot = {
+    timestamp: Date.now(),
+    panels: JSON.parse(JSON.stringify(panels)),
+    activePanel,
+    tabAssignments
+  };
+
+  const data = await browser.storage.local.get('snapshots');
+  let snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+  snapshots.push(snapshot);
+  if (snapshots.length > maxSnapshots) snapshots = snapshots.slice(snapshots.length - maxSnapshots);
+  await browser.storage.local.set({ snapshots });
+  return { ok: true, snapshot };
+}
+
+async function rollbackSnapshot(index) {
+  const data = await browser.storage.local.get('snapshots');
+  const snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+  const snapshot = snapshots[index];
+  if (!snapshot) return { ok: false, error: 'Snapshot not found.' };
+
+  await savePanels(snapshot.panels);
+  await browser.storage.local.set({ activePanel: snapshot.activePanel });
+
+  const validIds = new Set(snapshot.panels.map(p => p.id));
+  const fallback = snapshot.activePanel;
+
+  // Working list of snapshot entries; consumed as current tabs are matched.
+  const snapLeft = snapshot.tabAssignments.map(a => ({
+    url: a.url,
+    panelId: validIds.has(a.panelId) ? a.panelId : fallback
+  }));
+
+  const currentTabs = await browser.tabs.query({});
+  const toClose = [];
+  const toRetag = []; // { tabId, panelId }
+
+  for (const tab of currentTabs) {
+    const normalUrl = normalizeUrl(tab.url);
+    const matchIdx = snapLeft.findIndex(a => a.url === normalUrl);
+    if (matchIdx !== -1) {
+      toRetag.push({ tabId: tab.id, panelId: snapLeft[matchIdx].panelId });
+      snapLeft.splice(matchIdx, 1);
+    } else {
+      toClose.push(tab);
+    }
+  }
+
+  // Remaining snapLeft entries have no current tab -> reopen (http/https only).
+  const toOpen = snapLeft.filter(a => /^https?:\/\//.test(a.url));
+
+  for (const { tabId, panelId } of toRetag) {
+    await browser.sessions.setTabValue(tabId, 'panel', panelId);
+  }
+
+  // Open missing tabs in the background.
+  const opened = [];
+  for (const { url, panelId } of toOpen) {
+    const t = await browser.tabs.create({ url, active: false });
+    await browser.sessions.setTabValue(t.id, 'panel', panelId);
+    opened.push(t);
+  }
+
+  // Guarantee at least one tab stays open before we remove anything.
+  if (toClose.length === currentTabs.length && toRetag.length === 0 && opened.length === 0) {
+    const t = await browser.tabs.create({ active: true });
+    await browser.sessions.setTabValue(t.id, 'panel', fallback);
+  }
+
+  // If the active tab is being closed, focus something that will survive.
+  const activeTab = currentTabs.find(t => t.active);
+  if (activeTab && toClose.some(t => t.id === activeTab.id)) {
+    const safeId = toRetag.length ? toRetag[0].tabId : (opened.length ? opened[0].id : null);
+    if (safeId) await browser.tabs.update(safeId, { active: true });
+  }
+
+  if (toClose.length > 0) await browser.tabs.remove(toClose.map(t => t.id));
+
+  await switchPanel(snapshot.activePanel);
+  return { ok: true };
+}
+
+async function deleteSnapshot(index) {
+  const data = await browser.storage.local.get('snapshots');
+  let snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+  if (index < 0 || index >= snapshots.length) return { ok: false, error: 'Snapshot not found.' };
+  snapshots.splice(index, 1);
+  await browser.storage.local.set({ snapshots });
+  return { ok: true };
+}
+
+async function updateSnapshotSettings(period, maxSnapshots) {
+  const updates = {};
+  if (period != null) updates.snapshotPeriod = Math.max(1, parseInt(period) || DEFAULT_SNAPSHOT_PERIOD);
+  if (maxSnapshots != null) updates.maxSnapshots = Math.max(1, parseInt(maxSnapshots) || DEFAULT_MAX_SNAPSHOTS);
+  await browser.storage.local.set(updates);
+  await resetSnapshotAlarm();
+}
+
+// Only creates the alarm if it doesn't already exist.
+// Preserves Firefox's "fire missed alarm on next launch" behavior.
+async function initSnapshotAlarm() {
+  const existing = await browser.alarms.get(ALARM_NAME);
+  if (!existing) {
+    const { period } = await getSnapshotSettings();
+    browser.alarms.create(ALARM_NAME, { periodInMinutes: period * 60 });
+  }
+}
+
+// Called when settings change: clears and recreates with new period.
+async function resetSnapshotAlarm() {
+  await browser.alarms.clear(ALARM_NAME);
+  const { period } = await getSnapshotSettings();
+  browser.alarms.create(ALARM_NAME, { periodInMinutes: period * 60 });
+}
+
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_NAME) takeSnapshot();
+});
+
 // --- wiring ---------------------------------------------------------------
 
 function notifyChanged() {
@@ -300,6 +445,15 @@ browser.runtime.onMessage.addListener(async (msg) => {
     case 'reorder':      return reorderPanels(msg.order);
     case 'migrate':      return migrateFromSidebery(msg.backup);
     case 'reset':        return resetAll();
+    case 'takeSnapshot': return takeSnapshot();
+    case 'rollbackSnapshot': return rollbackSnapshot(msg.index);
+    case 'deleteSnapshot':   return deleteSnapshot(msg.index);
+    case 'getSnapshots': {
+      const snapData = await browser.storage.local.get('snapshots');
+      const snapSettings = await getSnapshotSettings();
+      return { snapshots: snapData.snapshots || [], ...snapSettings };
+    }
+    case 'updateSnapshotSettings': return updateSnapshotSettings(msg.period, msg.maxSnapshots);
     case 'listPanelTabs': return listPanelTabs(msg.panelId);
     case 'activateTab':  return browser.tabs.update(msg.tabId, { active: true });
     case 'closeTab':     return browser.tabs.remove(msg.tabId);
@@ -327,3 +481,4 @@ for (const ev of ['onActivated', 'onUpdated', 'onRemoved', 'onMoved']) {
 }
 
 getPanels(); // ensure defaults exist on load
+initSnapshotAlarm();

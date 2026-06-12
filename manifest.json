@@ -2,16 +2,20 @@
   "manifest_version": 3,
   "name": "Houdini",
   "version": "0.2",
-  "description": "Sidebery-style tab panels for Firefox.",
+  "description": "Houdini brings tab panels straight into Firefox's own sidebar — no extra UI, no sidebar replacement. Pick a panel — every tab that doesn't belong disappears. Houdini would approve.",
   "permissions": [
     "tabs",
     "tabHide",
     "sessions",
-    "storage"
+    "storage",
+    "alarms"
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "houdini@local"
+      "id": "houdini@local",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   },
   "icons": {
