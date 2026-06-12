@@ -167,8 +167,92 @@ document.getElementById('manageBtn').addEventListener('click', () => {
   window.close();
 });
 
+// --- Cross-panel tab search ----------------------------------------------
+
+const searchInput = document.getElementById('search');
+const results = document.getElementById('results');
+
+function matches(tab, q) {
+  return (tab.title || '').toLowerCase().includes(q) ||
+         (tab.url || '').toLowerCase().includes(q);
+}
+
+async function runSearch() {
+  const q = searchInput.value.trim().toLowerCase();
+  if (!q) {
+    document.body.classList.remove('searching');
+    results.innerHTML = '';
+    return;
+  }
+  document.body.classList.add('searching');
+
+  const tabs = await send({ cmd: 'searchTabs' });
+  const hits = tabs.filter(t => matches(t, q));
+  results.innerHTML = '';
+
+  if (hits.length === 0) {
+    const e = document.createElement('div');
+    e.className = 'empty';
+    e.textContent = 'No matching tabs.';
+    results.appendChild(e);
+    return;
+  }
+
+  for (const tab of hits) {
+    const row = document.createElement('div');
+    row.className = 'res';
+
+    if (tab.favIconUrl) {
+      const img = document.createElement('img');
+      img.className = 'fav';
+      img.src = tab.favIconUrl;
+      img.addEventListener('error', () => {
+        const fb = document.createElement('span');
+        fb.className = 'fav-fallback';
+        fb.textContent = '🌐';
+        img.replaceWith(fb);
+      });
+      row.appendChild(img);
+    } else {
+      const fb = document.createElement('span');
+      fb.className = 'fav-fallback';
+      fb.textContent = '🌐';
+      row.appendChild(fb);
+    }
+
+    const main = document.createElement('div');
+    main.className = 'res-main';
+    const title = document.createElement('div');
+    title.className = 'res-title';
+    title.textContent = tab.title || tab.url || 'Untitled';
+    const url = document.createElement('div');
+    url.className = 'res-url';
+    url.textContent = tab.url || '';
+    main.append(title, url);
+
+    const panel = document.createElement('span');
+    panel.className = 'res-panel';
+    panel.textContent = `${tab.panelIcon} ${tab.panelName}`;
+
+    row.append(main, panel);
+    row.addEventListener('click', () => {
+      send({ cmd: 'focusTab', tabId: tab.id });
+      window.close();
+    });
+    results.appendChild(row);
+  }
+}
+
+searchInput.addEventListener('input', runSearch);
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { searchInput.value = ''; runSearch(); }
+});
+
 browser.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.type === 'houdini:changed') render();
+  if (msg && msg.type === 'houdini:changed') {
+    render();
+    if (document.body.classList.contains('searching')) runSearch();
+  }
 });
 
 render();

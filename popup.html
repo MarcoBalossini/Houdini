@@ -70,6 +70,28 @@
     #modal .cancel:hover { background: #52525e; }
     #modal .ok { background: #5a2a2a; }
     #modal .ok:hover { background: #7a3434; }
+    /* cross-panel tab search */
+    #search { width: 100%; box-sizing: border-box; margin: 8px 0 4px; background: #2b2a33;
+              border: 1px solid #42414d; border-radius: 8px; color: #fff; padding: 8px 10px;
+              font: inherit; }
+    #search:focus { outline: none; border-color: #0060df; }
+    #results { display: none; flex-direction: column; gap: 4px; margin-top: 6px;
+               max-height: 360px; overflow-y: auto; }
+    body.searching #results { display: flex; }
+    body.searching #panels { display: none; }
+    .res { display: flex; align-items: center; gap: 8px; padding: 7px 8px; background: #2b2a33;
+           border-radius: 8px; cursor: pointer; }
+    .res:hover { background: #34333c; }
+    .res img.fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+    .res .fav-fallback { width: 16px; text-align: center; flex: none; }
+    .res .res-main { flex: 1; min-width: 0; }
+    .res .res-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .res .res-url { font-size: 11px; opacity: .45; white-space: nowrap; overflow: hidden;
+                    text-overflow: ellipsis; }
+    .res .res-panel { flex: none; font-size: 11px; opacity: .7; background: #42414d;
+                      border-radius: 5px; padding: 3px 7px; max-width: 90px; white-space: nowrap;
+                      overflow: hidden; text-overflow: ellipsis; }
+    #results .empty { opacity: .5; font-size: 12px; padding: 10px 4px; }
   </style>
 </head>
 <body>
@@ -79,15 +101,20 @@
     <span class="by">Panels</span>
   </header>
 
-  <h2>Panels — click Open to switch</h2>
-  <div id="list"></div>
-  <div class="addbar">
-    <input class="icon" id="newIcon" value="📄" maxlength="4" title="Click to pick an icon">
-    <input class="name" id="newName" placeholder="New panel name">
-    <button class="go" id="addBtn">Add</button>
-  </div>
+  <input id="search" placeholder="🔍  Search tabs across all panels…" autocomplete="off">
+  <div id="results"></div>
 
-  <button class="reset" id="manageBtn">Settings…</button>
+  <div id="panels">
+    <h2>Panels — click Open to switch</h2>
+    <div id="list"></div>
+    <div class="addbar">
+      <input class="icon" id="newIcon" value="📄" maxlength="4" title="Click to pick an icon">
+      <input class="name" id="newName" placeholder="New panel name">
+      <button class="go" id="addBtn">Add</button>
+    </div>
+
+    <button class="reset" id="manageBtn">Settings…</button>
+  </div>
 
   <div id="paletteOverlay"><div id="palette"></div></div>
 

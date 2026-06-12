@@ -524,11 +524,42 @@ browser.runtime.onMessage.addListener(async (msg) => {
     }
     case 'updateSnapshotSettings': return updateSnapshotSettings(msg.period, msg.maxSnapshots);
     case 'listPanelTabs': return listPanelTabs(msg.panelId);
+    case 'searchTabs':   return searchAllTabs();
+    case 'focusTab':     return focusTab(msg.tabId);
     case 'activateTab':  return browser.tabs.update(msg.tabId, { active: true });
     case 'closeTab':     return browser.tabs.remove(msg.tabId);
     case 'newTab':       return browser.tabs.create({ active: true });
   }
 });
+
+// Every tab in the window, tagged with its panel — for cross-panel search.
+async function searchAllTabs() {
+  const { panels } = await getPanels();
+  const byId = Object.fromEntries(panels.map(p => [p.id, p]));
+  const tabs = await browser.tabs.query({ currentWindow: true });
+  const out = [];
+  for (const tab of tabs) {
+    const pid = await browser.sessions.getTabValue(tab.id, 'panel');
+    const panel = byId[pid];
+    out.push({
+      id: tab.id, title: tab.title, url: tab.url, favIconUrl: tab.favIconUrl,
+      active: tab.active, panelId: pid,
+      panelName: panel ? panel.name : 'Unassigned',
+      panelIcon: panel ? (panel.icon || '📄') : '❔'
+    });
+  }
+  return out;
+}
+
+// Jump to a tab anywhere: switch to its panel (if hidden) then focus it.
+async function focusTab(tabId) {
+  const panelId = await browser.sessions.getTabValue(tabId, 'panel');
+  const { panels, activePanel } = await getPanels();
+  if (panelId && panelId !== activePanel && panels.some(p => p.id === panelId)) {
+    await switchPanel(panelId);
+  }
+  await browser.tabs.update(tabId, { active: true });
+}
 
 // Tabs (with title/favicon) belonging to a panel, for the sidebar list.
 async function listPanelTabs(panelId) {
