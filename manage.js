@@ -41,6 +41,186 @@ document.getElementById('resetBtn').addEventListener('click', async () => {
   out.textContent = 'Reset done.';
 });
 
+// --- Native backup -------------------------------------------------------
+
+const backupOut = document.getElementById('backupResult');
+
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  const data = await send({ cmd: 'exportData' });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `houdini-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  backupOut.className = 'ok';
+  backupOut.textContent = `Exported ${data.panels.length} panel(s), ${data.tabAssignments.length} tab(s).`;
+});
+
+async function doRestore(text) {
+  if (!confirm('Import will REPLACE all current panels and tab assignments. Continue?')) return;
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) { backupOut.className = 'err'; backupOut.textContent = 'Not valid JSON: ' + e.message; return; }
+  const res = await send({ cmd: 'importData', data });
+  if (res && res.ok) {
+    backupOut.className = 'ok';
+    backupOut.textContent = `Restored ${res.panels} panel(s), tagged ${res.tabs} tab(s).`;
+  } else {
+    backupOut.className = 'err';
+    backupOut.textContent = (res && res.error) || 'Import failed.';
+  }
+}
+
+document.getElementById('restoreFileBtn').addEventListener('click', async () => {
+  const file = document.getElementById('restoreFile').files[0];
+  if (!file) { backupOut.className = 'err'; backupOut.textContent = 'Choose a file first.'; return; }
+  doRestore(await file.text());
+});
+
+document.getElementById('restoreTextBtn').addEventListener('click', () => {
+  const text = document.getElementById('restoreText').value.trim();
+  if (!text) { backupOut.className = 'err'; backupOut.textContent = 'Paste the backup JSON first.'; return; }
+  doRestore(text);
+});
+
+// --- Keyboard shortcuts (editable) ---------------------------------------
+
+const scList = document.getElementById('shortcuts');
+const scResult = document.getElementById('shortcutResult');
+
+// Friendly labels; commands.getAll() descriptions for jump commands are generic.
+const SC_LABELS = {
+  'next-panel': 'Next panel',
+  'prev-panel': 'Previous panel',
+  '_execute_action': 'Open Houdini popup',
+  'switch-panel-1': 'Jump to panel 1', 'switch-panel-2': 'Jump to panel 2',
+  'switch-panel-3': 'Jump to panel 3', 'switch-panel-4': 'Jump to panel 4',
+  'switch-panel-5': 'Jump to panel 5', 'switch-panel-6': 'Jump to panel 6',
+  'switch-panel-7': 'Jump to panel 7', 'switch-panel-8': 'Jump to panel 8'
+};
+
+let recording = null; // command name currently capturing keys, or null
+
+// Map a KeyboardEvent's main key to a Firefox-shortcut token, or null.
+function keyToken(e) {
+  const c = e.code;
+  if (/^Key[A-Z]$/.test(c)) return c.slice(3);
+  if (/^Digit[0-9]$/.test(c)) return c.slice(5);
+  if (/^F([1-9]|1[0-2])$/.test(c)) return c;            // F1–F12
+  const named = {
+    Comma: 'Comma', Period: 'Period', Space: 'Space',
+    Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+    Insert: 'Insert', Delete: 'Delete',
+    ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right'
+  };
+  return named[c] || null;
+}
+
+// Build a Firefox shortcut string from an event, or an error message.
+function buildShortcut(e) {
+  const key = keyToken(e);
+  if (!key) return { error: 'Unsupported key.' };
+  const mods = [];
+  if (e.ctrlKey) mods.push('Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.metaKey) mods.push('Command');
+  if (e.shiftKey) mods.push('Shift');
+  const isFn = /^F([1-9]|1[0-2])$/.test(key);
+  const hasPrimary = e.ctrlKey || e.altKey || e.metaKey;
+  // Firefox requires a primary modifier (Ctrl/Alt/Cmd) for non-function keys.
+  if (!isFn && !hasPrimary) return { error: 'Needs Ctrl or Alt.' };
+  // Shift alone isn't a valid primary modifier.
+  if (!isFn && mods.length === 1 && mods[0] === 'Shift') return { error: 'Needs Ctrl or Alt.' };
+  return { shortcut: [...mods, key].join('+') };
+}
+
+// Pretty-print a stored shortcut ("Alt+Period") as kbd elements.
+function renderKeys(shortcut) {
+  if (!shortcut) return '<span class="none">unset</span>';
+  const pretty = { Period: '.', Comma: ',', Command: '⌘' };
+  return shortcut.split('+').map(k => `<kbd>${pretty[k] || k}</kbd>`).join('+');
+}
+
+async function loadShortcuts() {
+  if (!browser.commands || !browser.commands.update) {
+    scList.innerHTML = '<p style="opacity:.5;font-size:12px;margin:0">Not supported in this browser.</p>';
+    return;
+  }
+  const cmds = await browser.commands.getAll();
+  // Keep our known commands in a stable, sensible order.
+  const order = Object.keys(SC_LABELS);
+  cmds.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+
+  scList.innerHTML = '';
+  for (const cmd of cmds) {
+    const row = document.createElement('div');
+    row.className = 'sc-row';
+    row.dataset.name = cmd.name;
+    const label = SC_LABELS[cmd.name] || cmd.description || cmd.name;
+    row.innerHTML = `
+      <span class="sc-label">${label}</span>
+      <span class="sc-key">${renderKeys(cmd.shortcut)}</span>
+      <button class="sc-set">Set</button>
+      <button class="sc-clear" title="Clear">✕</button>
+    `;
+    row.querySelector('.sc-set').addEventListener('click', () => {
+      if (recording === cmd.name) stopRecording();
+      else startRecording(cmd.name, row);
+    });
+    row.querySelector('.sc-clear').addEventListener('click', () => setShortcut(cmd.name, ''));
+    scList.appendChild(row);
+  }
+}
+
+function startRecording(name, row) {
+  if (recording) stopRecording();
+  recording = name;
+  row.classList.add('recording');
+  row.querySelector('.sc-key').innerHTML = '<span class="none">press keys…</span>';
+  row.querySelector('.sc-set').textContent = 'Cancel';
+  scResult.textContent = '';
+}
+
+function stopRecording() {
+  recording = null;
+  document.querySelectorAll('.sc-row.recording').forEach(r => r.classList.remove('recording'));
+  loadShortcuts();
+}
+
+async function setShortcut(name, shortcut) {
+  try {
+    await browser.commands.update({ name, shortcut });
+    scResult.className = 'ok';
+    scResult.textContent = shortcut ? 'Shortcut saved.' : 'Shortcut cleared.';
+  } catch (e) {
+    scResult.className = 'err';
+    scResult.textContent = 'Could not set: ' + e.message;
+  }
+  recording = null;
+  await loadShortcuts();
+}
+
+// Global key capture while recording.
+document.addEventListener('keydown', (e) => {
+  if (!recording) return;
+  // Let the "Set" button's own click handler cancel; here handle keys + Esc.
+  if (e.key === 'Escape') { e.preventDefault(); stopRecording(); return; }
+  // Ignore lone modifier presses; wait for the real key.
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+  e.preventDefault();
+  const res = buildShortcut(e);
+  if (res.error) {
+    scResult.className = 'err';
+    scResult.textContent = res.error;
+    return;
+  }
+  setShortcut(recording, res.shortcut);
+}, true);
+
+loadShortcuts();
+
 // --- Snapshots -----------------------------------------------------------
 
 const snapResult = document.getElementById('snapResult');

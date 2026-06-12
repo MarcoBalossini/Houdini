@@ -40,5 +40,26 @@
   },
   "background": {
     "scripts": ["background.js"]
+  },
+  "commands": {
+    "next-panel": {
+      "suggested_key": { "default": "Alt+Period" },
+      "description": "Switch to next panel"
+    },
+    "prev-panel": {
+      "suggested_key": { "default": "Alt+Comma" },
+      "description": "Switch to previous panel"
+    },
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+P" }
+    },
+    "switch-panel-1": { "description": "Switch to panel 1" },
+    "switch-panel-2": { "description": "Switch to panel 2" },
+    "switch-panel-3": { "description": "Switch to panel 3" },
+    "switch-panel-4": { "description": "Switch to panel 4" },
+    "switch-panel-5": { "description": "Switch to panel 5" },
+    "switch-panel-6": { "description": "Switch to panel 6" },
+    "switch-panel-7": { "description": "Switch to panel 7" },
+    "switch-panel-8": { "description": "Switch to panel 8" }
   }
 }

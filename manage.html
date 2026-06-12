@@ -31,6 +31,20 @@
     pre { background: #111017; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px;
           white-space: pre-wrap; }
     code { background: #111017; padding: 1px 5px; border-radius: 4px; }
+    kbd { background: #111017; border: 1px solid #42414d; border-bottom-width: 2px;
+          border-radius: 5px; padding: 1px 6px; font: 12px monospace; }
+    .sc-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
+              border-top: 1px solid #3a3942; }
+    .sc-row:first-child { border-top: none; }
+    .sc-label { flex: 1; }
+    .sc-key { min-width: 110px; text-align: center; }
+    .sc-key .none { opacity: .4; font-size: 12px; }
+    .sc-row.recording .sc-key { color: #f0c674; }
+    .sc-row button { background: #42414d; border: none; border-radius: 6px; color: #fff;
+                     cursor: pointer; padding: 6px 12px; font: inherit; font-size: 12px; }
+    .sc-row button:hover { background: #52525e; }
+    .sc-row .sc-clear { background: #5a2a2a; }
+    .sc-row .sc-clear:hover { background: #7a3434; }
     .snap-settings { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .snap-settings label { display: flex; align-items: center; gap: 6px; }
     .snap-settings input[type=number] { width: 64px; background: #1c1b22; border: 1px solid #42414d;
@@ -52,7 +66,34 @@
 <body>
   <h1><img src="icon-48.png" alt="">Houdini</h1>
   <p>Day-to-day panel editing (add, rename, reorder, remove, switch) lives in the toolbar popup.
-     This page handles the destructive actions: importing from Sidebery and resetting.</p>
+     This page handles snapshots, backup &amp; restore, Sidebery import, keyboard shortcuts, and reset.</p>
+
+  <h2>Automatic Snapshots</h2>
+  <div class="card">
+    <p>Houdini periodically saves your panels and tab assignments. Roll back to any saved point.</p>
+    <div class="snap-settings">
+      <label>Every <input type="number" id="snapPeriod" min="1" max="168"> hours</label>
+      <label>Keep <input type="number" id="snapMax" min="1" max="200"> snapshots max</label>
+      <button class="primary" id="snapSaveBtn">Save settings</button>
+      <button class="secondary" id="snapNowBtn">Snapshot now</button>
+    </div>
+    <div id="snapResult"></div>
+    <div id="snapList"></div>
+  </div>
+
+  <h2>Backup &amp; restore</h2>
+  <div class="card">
+    <p>Save your panels and tab assignments to a file, or restore them on another machine.
+       Restoring <b>replaces</b> all current panels and re-tags every open tab.</p>
+    <div class="row">
+      <button class="primary" id="exportBtn">Export backup</button>
+      <input type="file" id="restoreFile" accept=".json,application/json">
+      <button class="primary" id="restoreFileBtn">Import file</button>
+    </div>
+    <textarea id="restoreText" placeholder="…or paste backup JSON here"></textarea>
+    <button class="primary" id="restoreTextBtn" style="margin-top:8px">Import pasted JSON</button>
+    <div id="backupResult"></div>
+  </div>
 
   <h2>Import from Sidebery — replaces all current panels</h2>
   <div class="card">
@@ -75,17 +116,12 @@
     </details>
   </div>
 
-  <h2>Automatic Snapshots</h2>
+  <h2>Keyboard shortcuts</h2>
   <div class="card">
-    <p>Houdini periodically saves your panels and tab assignments. Roll back to any saved point.</p>
-    <div class="snap-settings">
-      <label>Every <input type="number" id="snapPeriod" min="1" max="168"> hours</label>
-      <label>Keep <input type="number" id="snapMax" min="1" max="200"> snapshots max</label>
-      <button class="primary" id="snapSaveBtn">Save settings</button>
-      <button class="secondary" id="snapNowBtn">Snapshot now</button>
-    </div>
-    <div id="snapResult"></div>
-    <div id="snapList"></div>
+    <p>Click <b>Set</b>, then press your key combo (needs <kbd>Ctrl</kbd> or <kbd>Alt</kbd>).
+       <kbd>Esc</kbd> cancels.</p>
+    <div id="shortcuts"></div>
+    <div id="shortcutResult"></div>
   </div>
 
   <h2>Reset</h2>

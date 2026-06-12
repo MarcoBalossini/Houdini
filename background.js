@@ -40,14 +40,32 @@ async function panelTabCounts() {
   return counts;
 }
 
+// Per-panel memory of the last-focused tab, keyed by panel id.
+async function getLastActive() {
+  const d = await browser.storage.local.get('lastActiveTab');
+  return (d.lastActiveTab && typeof d.lastActiveTab === 'object') ? d.lastActiveTab : {};
+}
+async function setLastActiveForPanel(panelId, tabId) {
+  const map = await getLastActive();
+  map[panelId] = tabId;
+  await browser.storage.local.set({ lastActiveTab: map });
+}
+
 // Switch the visible panel: show tabs tagged for it, hide the rest.
 async function switchPanel(targetPanel) {
-  const { panels } = await getPanels();
+  const { panels, activePanel: prevPanel } = await getPanels();
   if (!panels.some(p => p.id === targetPanel)) return;
+
+  const allTabs = await browser.tabs.query({ currentWindow: true });
+
+  // Remember the tab we're leaving on, so returning here restores it.
+  const leavingTab = allTabs.find(t => t.active);
+  if (leavingTab && prevPanel && prevPanel !== targetPanel) {
+    await setLastActiveForPanel(prevPanel, leavingTab.id);
+  }
 
   await browser.storage.local.set({ activePanel: targetPanel });
 
-  const allTabs = await browser.tabs.query({ currentWindow: true });
   const tabsToShow = [];
   const tabsToHide = [];
 
@@ -62,19 +80,26 @@ async function switchPanel(targetPanel) {
     else tabsToHide.push(tab.id);
   }
 
-  // Firefox refuses to hide the active tab; move focus first.
-  const activeTab = allTabs.find(t => t.active);
-  if (activeTab && tabsToHide.includes(activeTab.id)) {
-    if (tabsToShow.length === 0) {
-      const newTab = await browser.tabs.create({ active: true });
-      await browser.sessions.setTabValue(newTab.id, 'panel', targetPanel);
-      tabsToShow.push(newTab.id);
-    } else {
-      await browser.tabs.update(tabsToShow[0], { active: true });
-    }
+  // Show the panel's tabs first — a hidden tab can't be made active, so we must
+  // un-hide before focusing the one we want.
+  if (tabsToShow.length === 0) {
+    const newTab = await browser.tabs.create({ active: true });
+    await browser.sessions.setTabValue(newTab.id, 'panel', targetPanel);
+    tabsToShow.push(newTab.id);
+  } else {
+    await browser.tabs.show(tabsToShow);
   }
 
-  if (tabsToShow.length > 0) await browser.tabs.show(tabsToShow);
+  // If the tab we're leaving is about to be hidden, move focus onto the tab we
+  // last had open in this panel (or the first one). Firefox won't hide the
+  // active tab, so this must happen before the hide call.
+  const activeTab = allTabs.find(t => t.active);
+  if (activeTab && tabsToHide.includes(activeTab.id)) {
+    const remembered = (await getLastActive())[targetPanel];
+    const focusId = (remembered && tabsToShow.includes(remembered)) ? remembered : tabsToShow[0];
+    await browser.tabs.update(focusId, { active: true });
+  }
+
   if (tabsToHide.length > 0) await browser.tabs.hide(tabsToHide);
 
   notifyChanged();
@@ -289,23 +314,27 @@ async function getSnapshotSettings() {
   };
 }
 
-async function takeSnapshot() {
+// Serialize current panels + per-tab assignments (URL-keyed). Shared by
+// snapshots and the native backup export.
+async function captureState() {
   const { panels, activePanel } = await getPanels();
-  const { maxSnapshots } = await getSnapshotSettings();
-
   const tabs = await browser.tabs.query({});
   const tabAssignments = [];
   for (const tab of tabs) {
     const panelId = await browser.sessions.getTabValue(tab.id, 'panel');
     if (panelId) tabAssignments.push({ url: normalizeUrl(tab.url), panelId });
   }
-
-  const snapshot = {
+  return {
     timestamp: Date.now(),
     panels: JSON.parse(JSON.stringify(panels)),
     activePanel,
     tabAssignments
   };
+}
+
+async function takeSnapshot() {
+  const { maxSnapshots } = await getSnapshotSettings();
+  const snapshot = await captureState();
 
   const data = await browser.storage.local.get('snapshots');
   let snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
@@ -315,14 +344,12 @@ async function takeSnapshot() {
   return { ok: true, snapshot };
 }
 
-async function rollbackSnapshot(index) {
-  const data = await browser.storage.local.get('snapshots');
-  const snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
-  const snapshot = snapshots[index];
-  if (!snapshot) return { ok: false, error: 'Snapshot not found.' };
-
+// Restore a captured state: replace panels, re-tag tabs to match (reopen tabs
+// closed since, close tabs opened since). Shared by rollback and import.
+async function applySnapshot(snapshot) {
   await savePanels(snapshot.panels);
-  await browser.storage.local.set({ activePanel: snapshot.activePanel });
+  // Last-active-tab memory is per-session tab ids; stale after a restore.
+  await browser.storage.local.set({ activePanel: snapshot.activePanel, lastActiveTab: {} });
 
   const validIds = new Set(snapshot.panels.map(p => p.id));
   const fallback = snapshot.activePanel;
@@ -382,6 +409,14 @@ async function rollbackSnapshot(index) {
   return { ok: true };
 }
 
+async function rollbackSnapshot(index) {
+  const data = await browser.storage.local.get('snapshots');
+  const snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+  const snapshot = snapshots[index];
+  if (!snapshot) return { ok: false, error: 'Snapshot not found.' };
+  return applySnapshot(snapshot);
+}
+
 async function deleteSnapshot(index) {
   const data = await browser.storage.local.get('snapshots');
   let snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
@@ -389,6 +424,28 @@ async function deleteSnapshot(index) {
   snapshots.splice(index, 1);
   await browser.storage.local.set({ snapshots });
   return { ok: true };
+}
+
+// --- Native backup --------------------------------------------------------
+
+// Houdini's own export: same shape as a snapshot, marked so import can tell it
+// apart from a Sidebery dump.
+async function exportData() {
+  return { houdiniBackup: 1, ...(await captureState()) };
+}
+
+// Restore a Houdini backup file (replaces panels, re-tags tabs).
+async function importData(data) {
+  if (!data || !Array.isArray(data.panels) || !Array.isArray(data.tabAssignments)) {
+    return { ok: false, error: 'Not a Houdini backup file.' };
+  }
+  if (data.panels.length === 0) return { ok: false, error: 'Backup has no panels.' };
+  await applySnapshot({
+    panels: data.panels,
+    activePanel: data.activePanel || data.panels[0].id,
+    tabAssignments: data.tabAssignments
+  });
+  return { ok: true, panels: data.panels.length, tabs: data.tabAssignments.length };
 }
 
 async function updateSnapshotSettings(period, maxSnapshots) {
@@ -419,6 +476,31 @@ async function resetSnapshotAlarm() {
 browser.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) takeSnapshot();
 });
+
+// --- Keyboard shortcuts ---------------------------------------------------
+
+// Switch to the panel `dir` steps from the active one (wraps around).
+async function cyclePanel(dir) {
+  const { panels, activePanel } = await getPanels();
+  if (panels.length < 2) return;
+  const i = panels.findIndex(p => p.id === activePanel);
+  const next = panels[(i + dir + panels.length) % panels.length];
+  if (next) await switchPanel(next.id);
+}
+
+async function switchPanelByIndex(idx) {
+  const { panels } = await getPanels();
+  if (panels[idx]) await switchPanel(panels[idx].id);
+}
+
+if (browser.commands) {
+  browser.commands.onCommand.addListener((cmd) => {
+    if (cmd === 'next-panel') return cyclePanel(1);
+    if (cmd === 'prev-panel') return cyclePanel(-1);
+    const m = /^switch-panel-(\d+)$/.exec(cmd);
+    if (m) return switchPanelByIndex(parseInt(m[1], 10) - 1);
+  });
+}
 
 // --- Move tab to panel (right-click menu) ---------------------------------
 
@@ -523,6 +605,8 @@ browser.runtime.onMessage.addListener(async (msg) => {
       return { snapshots: snapData.snapshots || [], ...snapSettings };
     }
     case 'updateSnapshotSettings': return updateSnapshotSettings(msg.period, msg.maxSnapshots);
+    case 'exportData':   return exportData();
+    case 'importData':   return importData(msg.data);
     case 'listPanelTabs': return listPanelTabs(msg.panelId);
     case 'searchTabs':   return searchAllTabs();
     case 'focusTab':     return focusTab(msg.tabId);
