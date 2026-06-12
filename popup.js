@@ -1,5 +1,32 @@
 const send = (msg) => browser.runtime.sendMessage(msg);
 
+// In-popup confirm — native confirm() renders cut/ugly in extension popups.
+const modal = document.getElementById('modal');
+const modalMsg = document.getElementById('modalMsg');
+const modalOk = document.getElementById('modalOk');
+const modalCancel = document.getElementById('modalCancel');
+let modalResolve = null;
+
+function confirmDialog(message, okLabel = 'Remove') {
+  modalMsg.textContent = message;
+  modalOk.textContent = okLabel;
+  modal.classList.add('open');
+  modalOk.focus();
+  return new Promise((resolve) => { modalResolve = resolve; });
+}
+function closeModal(result) {
+  modal.classList.remove('open');
+  if (modalResolve) { modalResolve(result); modalResolve = null; }
+}
+modalOk.addEventListener('click', () => closeModal(true));
+modalCancel.addEventListener('click', () => closeModal(false));
+modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(false); });
+document.addEventListener('keydown', (e) => {
+  if (!modal.classList.contains('open')) return;
+  if (e.key === 'Escape') closeModal(false);
+  if (e.key === 'Enter') closeModal(true);
+});
+
 // Built-in icon catalogue for the picker, grouped into labelled sections.
 const ICON_GROUPS = [
   { label: 'Files & docs',
@@ -20,7 +47,8 @@ const ICON_GROUPS = [
     icons: ['🎩','🪄','👻','🃏','♠️','♥️','♦️','♣️','🧨','🎯','🏆','🥇','🔮','💎','🧭','🗺️','📜','🗝️','⚡','🌀'] }
 ];
 
-// One shared popover, written into whichever .icon input was clicked.
+// One shared picker modal, written into whichever .icon input was clicked.
+const paletteOverlay = document.getElementById('paletteOverlay');
 const palette = document.getElementById('palette');
 let activeIconInput = null;
 for (const group of ICON_GROUPS) {
@@ -44,14 +72,19 @@ for (const group of ICON_GROUPS) {
 }
 function openPalette(input) {
   activeIconInput = input;
-  const r = input.getBoundingClientRect();
-  palette.style.display = 'flex';
-  palette.style.left = Math.max(4, Math.min(r.left, window.innerWidth - 240)) + 'px';
-  palette.style.top = (r.bottom + 4) + 'px';
+  paletteOverlay.classList.add('open');
+  palette.scrollTop = 0;
 }
-function hidePalette() { palette.style.display = 'none'; activeIconInput = null; }
-document.addEventListener('mousedown', (e) => {
-  if (!palette.contains(e.target) && !e.target.classList.contains('icon')) hidePalette();
+function hidePalette() {
+  paletteOverlay.classList.remove('open');
+  activeIconInput = null;
+}
+// Click the backdrop (outside the box) to dismiss.
+paletteOverlay.addEventListener('mousedown', (e) => {
+  if (e.target === paletteOverlay) hidePalette();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && paletteOverlay.classList.contains('open')) hidePalette();
 });
 
 async function render() {
@@ -90,8 +123,8 @@ async function render() {
     const open = mkBtn(p.id === activePanel ? '●' : 'Open', 'open', p.id === activePanel,
       () => { send({ cmd: 'switch', panelId: p.id }); window.close(); });
 
-    const del = mkBtn('✕', 'del', panels.length <= 1, () => {
-      if (confirm(`Remove "${p.name}"? Its tabs move to another panel.`))
+    const del = mkBtn('✕', 'del', panels.length <= 1, async () => {
+      if (await confirmDialog(`Remove "${p.name}"? Its tabs move to another panel.`))
         send({ cmd: 'remove', id: p.id });
     });
 
