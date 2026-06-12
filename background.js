@@ -26,6 +26,7 @@ async function getPanels() {
 
 async function savePanels(panels) {
   await browser.storage.local.set({ panels });
+  rebuildTabMenu(); // panel list changed -> refresh the right-click menu
 }
 
 // Count how many tabs are tagged to each panel (current window).
@@ -419,6 +420,74 @@ browser.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) takeSnapshot();
 });
 
+// --- Move tab to panel (right-click menu) ---------------------------------
+
+// Re-tag one tab into another panel, then fix visibility in its window.
+async function moveTabToPanel(tabId, panelId) {
+  const { panels, activePanel } = await getPanels();
+  if (!panels.some(p => p.id === panelId)) return;
+
+  await browser.sessions.setTabValue(tabId, 'panel', panelId);
+
+  const tab = await browser.tabs.get(tabId);
+
+  if (panelId === activePanel) {
+    await browser.tabs.show(tabId);
+  } else {
+    // Hiding the focused tab needs focus moved to a tab that stays visible.
+    if (tab.active) {
+      const winTabs = await browser.tabs.query({ windowId: tab.windowId });
+      let target = null;
+      for (const t of winTabs) {
+        if (t.id === tabId) continue;
+        const p = await browser.sessions.getTabValue(t.id, 'panel');
+        if (p === activePanel) { target = t.id; break; }
+      }
+      if (target == null) {
+        const newTab = await browser.tabs.create({ active: true });
+        await browser.sessions.setTabValue(newTab.id, 'panel', activePanel);
+      } else {
+        await browser.tabs.update(target, { active: true });
+      }
+    }
+    await browser.tabs.hide(tabId);
+  }
+
+  notifyChanged();
+}
+
+const TAB_MENU_PARENT = 'houdini-move-parent';
+
+// Rebuild the tab context menu's panel submenu from the current panel list.
+async function rebuildTabMenu() {
+  if (!browser.menus) return;
+  await browser.menus.removeAll();
+
+  browser.menus.create({
+    id: TAB_MENU_PARENT,
+    title: 'Move to panel',
+    contexts: ['tab']
+  });
+
+  const { panels } = await getPanels();
+  for (const p of panels) {
+    browser.menus.create({
+      id: 'houdini-move:' + p.id,
+      parentId: TAB_MENU_PARENT,
+      title: `${p.icon || '📄'}  ${p.name}`,
+      contexts: ['tab']
+    });
+  }
+}
+
+if (browser.menus) {
+  browser.menus.onClicked.addListener((info, tab) => {
+    if (!tab || typeof info.menuItemId !== 'string') return;
+    if (!info.menuItemId.startsWith('houdini-move:')) return;
+    moveTabToPanel(tab.id, info.menuItemId.slice('houdini-move:'.length));
+  });
+}
+
 // --- wiring ---------------------------------------------------------------
 
 function notifyChanged() {
@@ -482,3 +551,4 @@ for (const ev of ['onActivated', 'onUpdated', 'onRemoved', 'onMoved']) {
 
 getPanels(); // ensure defaults exist on load
 initSnapshotAlarm();
+rebuildTabMenu();

@@ -8,7 +8,8 @@
     "tabHide",
     "sessions",
     "storage",
-    "alarms"
+    "alarms",
+    "menus"
   ],
   "browser_specific_settings": {
     "gecko": {
