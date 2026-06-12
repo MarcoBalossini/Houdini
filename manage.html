@@ -6,12 +6,28 @@
   <link rel="icon" href="icon-48.png">
   <style>
     :root { color-scheme: dark; }
-    body { margin: 0 auto; padding: 28px; max-width: 620px; background: #1c1b22; color: #fff;
+    html { scroll-behavior: smooth; }
+    body { margin: 0; padding: 28px; background: #1c1b22; color: #fff;
            font: 14px system-ui, sans-serif; }
+    .layout { display: flex; gap: 36px; max-width: 880px; margin: 0 auto; align-items: flex-start; }
+    nav.toc { position: sticky; top: 28px; flex: none; width: 190px; }
+    nav.toc a { display: block; padding: 5px 10px; color: #fff; opacity: .55;
+                text-decoration: none; border-radius: 6px; font-size: 13px; }
+    nav.toc a:hover { opacity: .9; background: #26252c; }
+    nav.toc a.cat { opacity: .45; text-transform: uppercase; font-size: 11px; letter-spacing: .5px;
+                    margin-top: 14px; }
+    nav.toc a.cat:first-child { margin-top: 0; }
+    nav.toc a.sub { padding-left: 20px; }
+    nav.toc a.active { opacity: 1; background: #2b2a33; box-shadow: inset 2px 0 0 #0060df; }
+    main { flex: 1; min-width: 0; max-width: 620px; }
+    h2, h3 { scroll-margin-top: 24px; }
+    @media (max-width: 760px) { nav.toc { display: none; } }
     h1 { font-size: 20px; display: flex; align-items: center; gap: 12px; }
     h1 img { width: 30px; height: 30px; }
-    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; opacity: .6;
-         margin-top: 32px; }
+    h2 { font-size: 17px; margin: 38px 0 4px; padding-bottom: 7px;
+         border-bottom: 1px solid #3a3942; }
+    h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; opacity: .6;
+         margin: 22px 0 8px; }
     .card { background: #2b2a33; border-radius: 10px; padding: 18px; }
     p { opacity: .8; }
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -33,6 +49,8 @@
     code { background: #111017; padding: 1px 5px; border-radius: 4px; }
     kbd { background: #111017; border: 1px solid #42414d; border-bottom-width: 2px;
           border-radius: 5px; padding: 1px 6px; font: 12px monospace; }
+    label.toggle { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+    label.toggle input { width: 16px; height: 16px; cursor: pointer; }
     .sc-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
               border-top: 1px solid #3a3942; }
     .sc-row:first-child { border-top: none; }
@@ -64,11 +82,49 @@
   </style>
 </head>
 <body>
+ <div class="layout">
+  <nav class="toc" id="toc">
+    <a class="cat" href="#cat-behavior">Behavior</a>
+    <a class="sub" href="#tab-grouping">Tab grouping</a>
+    <a class="sub" href="#keyboard-shortcuts">Keyboard shortcuts</a>
+    <a class="cat" href="#cat-data">Backup &amp; data</a>
+    <a class="sub" href="#snapshots">Automatic snapshots</a>
+    <a class="sub" href="#backup-restore">Backup &amp; restore</a>
+    <a class="sub" href="#sidebery">Import from Sidebery</a>
+    <a class="cat" href="#cat-danger">Danger zone</a>
+    <a class="sub" href="#reset">Reset</a>
+  </nav>
+
+  <main>
   <h1><img src="icon-48.png" alt="">Houdini</h1>
   <p>Day-to-day panel editing (add, rename, reorder, remove, switch) lives in the toolbar popup.
-     This page handles snapshots, backup &amp; restore, Sidebery import, keyboard shortcuts, and reset.</p>
+     This page holds the rest: behavior, backup &amp; data, and the danger zone.</p>
 
-  <h2>Automatic Snapshots</h2>
+  <h2 id="cat-behavior">Behavior</h2>
+
+  <h3 id="tab-grouping">Tab grouping</h3>
+  <div class="card">
+    <label class="toggle">
+      <input type="checkbox" id="groupToggle">
+      <span>Group sub-tabs under the tab they were opened from</span>
+    </label>
+    <p>Uses Firefox's native tab groups. When you open a link in a new tab, it joins its opener's
+       group (one level — a sub-tab adopts the opener's group). Flat list otherwise.</p>
+    <p id="groupUnsupported" class="err" style="display:none">
+      This Firefox version has no tab-groups API, so this option does nothing here.</p>
+  </div>
+
+  <h3 id="keyboard-shortcuts">Keyboard shortcuts</h3>
+  <div class="card">
+    <p>Click <b>Set</b>, then press your key combo (needs <kbd>Ctrl</kbd> or <kbd>Alt</kbd>).
+       <kbd>Esc</kbd> cancels.</p>
+    <div id="shortcuts"></div>
+    <div id="shortcutResult"></div>
+  </div>
+
+  <h2 id="cat-data">Backup &amp; data</h2>
+
+  <h3 id="snapshots">Automatic snapshots</h3>
   <div class="card">
     <p>Houdini periodically saves your panels and tab assignments. Roll back to any saved point.</p>
     <div class="snap-settings">
@@ -81,7 +137,7 @@
     <div id="snapList"></div>
   </div>
 
-  <h2>Backup &amp; restore</h2>
+  <h3 id="backup-restore">Backup &amp; restore</h3>
   <div class="card">
     <p>Save your panels and tab assignments to a file, or restore them on another machine.
        Restoring <b>replaces</b> all current panels and re-tags every open tab.</p>
@@ -95,7 +151,7 @@
     <div id="backupResult"></div>
   </div>
 
-  <h2>Import from Sidebery — replaces all current panels</h2>
+  <h3 id="sidebery">Import from Sidebery — replaces all current panels</h3>
   <div class="card">
     <p>Pick a Sidebery dump file, <i>or</i> paste the dump JSON below. Both replace your current
        panels and re-tag every open tab.</p>
@@ -116,19 +172,15 @@
     </details>
   </div>
 
-  <h2>Keyboard shortcuts</h2>
-  <div class="card">
-    <p>Click <b>Set</b>, then press your key combo (needs <kbd>Ctrl</kbd> or <kbd>Alt</kbd>).
-       <kbd>Esc</kbd> cancels.</p>
-    <div id="shortcuts"></div>
-    <div id="shortcutResult"></div>
-  </div>
+  <h2 id="cat-danger">Danger zone</h2>
 
-  <h2>Reset</h2>
+  <h3 id="reset">Reset</h3>
   <div class="card">
     <p>Collapse everything to a single default panel and move <b>all</b> tabs into it.</p>
     <button class="reset" id="resetBtn">Reset everything</button>
   </div>
+  </main>
+ </div>
 
   <script src="manage.js"></script>
 </body>

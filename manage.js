@@ -1,6 +1,32 @@
 const send = (msg) => browser.runtime.sendMessage(msg);
 const out = document.getElementById('result');
 
+// --- Glossary scrollspy: highlight the nav link of the section in view ----
+(() => {
+  const links = [...document.querySelectorAll('nav.toc a')];
+  const byId = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const targets = [...byId.keys()].map(id => document.getElementById(id)).filter(Boolean);
+  if (!targets.length) return;
+
+  let activeId = null;
+  const setActive = (id) => {
+    if (id === activeId) return;
+    activeId = id;
+    links.forEach(a => a.classList.remove('active'));
+    byId.get(id)?.classList.add('active');
+  };
+
+  const spy = new IntersectionObserver((entries) => {
+    // Pick the heading nearest the top among those currently crossing the line.
+    const hit = entries.filter(e => e.isIntersecting)
+                       .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (hit) setActive(hit.target.id);
+  }, { rootMargin: '0px 0px -78% 0px', threshold: 0 });
+
+  targets.forEach(t => spy.observe(t));
+  setActive(targets[0].id);
+})();
+
 function showResult(res) {
   if (res && res.ok) {
     out.className = 'ok';
@@ -83,6 +109,23 @@ document.getElementById('restoreTextBtn').addEventListener('click', () => {
   const text = document.getElementById('restoreText').value.trim();
   if (!text) { backupOut.className = 'err'; backupOut.textContent = 'Paste the backup JSON first.'; return; }
   doRestore(text);
+});
+
+// --- Tab grouping --------------------------------------------------------
+
+const groupToggle = document.getElementById('groupToggle');
+
+(async () => {
+  const res = await send({ cmd: 'getGroupSetting' });
+  groupToggle.checked = !!(res && res.enabled);
+  if (res && !res.supported) {
+    document.getElementById('groupUnsupported').style.display = 'block';
+    groupToggle.disabled = true;
+  }
+})();
+
+groupToggle.addEventListener('change', () => {
+  send({ cmd: 'setGroupSetting', enabled: groupToggle.checked });
 });
 
 // --- Keyboard shortcuts (editable) ---------------------------------------

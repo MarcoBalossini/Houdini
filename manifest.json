@@ -9,7 +9,8 @@
     "sessions",
     "storage",
     "alarms",
-    "menus"
+    "menus",
+    "tabGroups"
   ],
   "browser_specific_settings": {
     "gecko": {
