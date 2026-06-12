@@ -36,9 +36,8 @@ Hidden tabs aren't closed — they keep their state and reappear the moment you 
 
 ### Panels & switching
 
-Open the toolbar popup to see every panel with its live tab count. Click **Open** to switch — the active
-panel is outlined. Rename inline, pick an icon from the palette, reorder with the arrows, or remove a panel
-(its tabs move to another panel, never lost).
+Open the toolbar popup to see every panel with its live tab count. Click **Open** to switch — the active panel is outlined.
+Add, remove, or rename panel; pick an icon from the palette, reorder with the arrows.
 
 > _Placeholder: screenshot of the popup with several panels._
 > `docs/media/popup.png`

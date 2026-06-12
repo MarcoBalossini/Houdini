@@ -120,7 +120,7 @@ async function render() {
     const up = mkBtn('↑', '', i === 0, () => move(panels, i, -1));
     const down = mkBtn('↓', '', i === panels.length - 1, () => move(panels, i, +1));
 
-    const open = mkBtn(p.id === activePanel ? '●' : 'Open', 'open', p.id === activePanel,
+    const open = mkBtn(p.id === activePanel ? 'Active' : 'Open', 'open', p.id === activePanel,
       () => { send({ cmd: 'switch', panelId: p.id }); window.close(); });
 
     const del = mkBtn('✕', 'del', panels.length <= 1, async () => {

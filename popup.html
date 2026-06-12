@@ -26,7 +26,9 @@
     .row button:disabled { opacity: .3; cursor: default; }
     .row .del { background: #5a2a2a; }
     .row .del:hover:not(:disabled) { background: #7a3434; }
+    .row .open { min-width: 60px; box-sizing: border-box; text-align: center; }
     .row .open:not(:disabled) { background: #0060df; }
+    .row.active .open:disabled { background: #2a7d46; color: #fff; opacity: 1; }
     .addbar { display: flex; gap: 6px; margin-top: 8px; }
     .addbar .icon { width: 44px; text-align: center; cursor: pointer; }
     .addbar input { background: #2b2a33; border: 1px solid #42414d; border-radius: 6px;
