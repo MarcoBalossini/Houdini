@@ -30,6 +30,7 @@ Hidden tabs aren't closed — they keep their state and reappear the moment you 
 | **Toolbar popup** | Add, rename, reorder, remove and switch panels from one click. |
 | **Cross-panel search** | Find a tab in _any_ panel by title or URL; jump to it and Houdini switches panels for you. |
 | **Keyboard shortcuts** | Cycle or jump to panels from the keyboard; remap keys in Settings. |
+| **Sub-tab grouping** | Optionally drop tabs you open from a link into their opener's native Firefox tab group. |
 | **Automatic snapshots** | Periodic backups of your panels + tab assignments, with one-click rollback. |
 | **Backup & restore** | Export your panels + tab assignments to a file; re-import on another machine. |
 | **Sidebery import** | Migrate your existing Sidebery panels and tab grouping. |
@@ -66,6 +67,19 @@ click **Set**, press your combo (needs <kbd>Ctrl</kbd> or <kbd>Alt</kbd>), done.
 
 > _Placeholder: screenshot of the Settings keyboard-shortcuts editor._
 > `docs/media/shortcuts.png`
+
+### Sub-tab grouping
+
+Off by default. When enabled (**Settings → Tab grouping**), any tab you open _from_ another — a link in
+a new tab, "open in new tab" — joins its opener's **native Firefox tab group**. If the opener isn't
+grouped yet, Houdini starts a group from the pair. Grouping is one level deep: a sub-tab simply adopts
+its opener's group, so a whole chain of links lands in the same group rather than nesting.
+
+Needs a Firefox version with the tab-groups API — the toggle disables itself and says so if yours
+doesn't have it.
+
+> _Placeholder: screenshot of a tab group formed from a link._
+> `docs/media/grouping.png`
 
 ### Automatic snapshots & rollback
 
@@ -167,6 +181,7 @@ tabs into it. Like import, it's destructive and asks for confirmation.
 | `storage` | Store panels, settings and snapshots. |
 | `alarms` | Schedule automatic snapshots that survive restarts. |
 | `menus` | Add the "Move to panel" tab right-click entry. |
+| `tabGroups` | Put sub-tabs into native tab groups (when grouping is enabled). |
 
 Houdini collects no data and talks to no server — everything stays in your browser.
 

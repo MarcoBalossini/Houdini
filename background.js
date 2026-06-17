@@ -606,6 +606,19 @@ async function groupSubtab(tab) {
   try {
     if (opener.groupId != null && opener.groupId !== -1) {
       await browser.tabs.group({ groupId: opener.groupId, tabIds: tab.id });
+    } else if (opener.pinned) {
+      // Pinned tabs can't join groups; keep opener pinned, group only the child.
+      // Reuse the same child-group if this pinned opener already spawned children.
+      const storedGid = await browser.sessions.getTabValue(opener.id, 'childGroupId');
+      let gid = storedGid;
+      if (gid == null) {
+        gid = await browser.tabs.group({ tabIds: [tab.id] });
+        const title = (opener.title || '').slice(0, 20);
+        if (title) await browser.tabGroups.update(gid, { title });
+        await browser.sessions.setTabValue(opener.id, 'childGroupId', gid);
+      } else {
+        await browser.tabs.group({ groupId: gid, tabIds: tab.id });
+      }
     } else {
       const gid = await browser.tabs.group({ tabIds: [opener.id, tab.id] });
       const title = (opener.title || '').slice(0, 20);
