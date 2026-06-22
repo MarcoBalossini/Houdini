@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Houdini — Import & Reset</title>
-  <link rel="icon" href="icon-48.png">
+  <link rel="icon" href="icons/icon-48.png">
   <style>
     :root { color-scheme: dark; }
     html { scroll-behavior: smooth; }
@@ -79,6 +79,10 @@
     .secondary { background: #42414d; border: none; border-radius: 6px; color: #fff; cursor: pointer;
                  padding: 6px 12px; font: inherit; font-size: 12px; }
     .secondary:hover { background: #57565e; }
+    .drop-zone { border: 2px dashed #42414d; border-radius: 8px; padding: 18px; text-align: center;
+                 color: #888; font-size: 13px; margin-top: 10px; cursor: default;
+                 transition: border-color .15s, color .15s; }
+    .drop-zone.over { border-color: #0060df; color: #fff; }
   </style>
 </head>
 <body>
@@ -96,7 +100,7 @@
   </nav>
 
   <main>
-  <h1><img src="icon-48.png" alt="">Houdini</h1>
+  <h1><img src="icons/icon-48.png" alt="">Houdini</h1>
   <p>Day-to-day panel editing (add, rename, reorder, remove, switch) lives in the toolbar popup.
      This page holds the rest: behavior, backup &amp; data, and the danger zone.</p>
 
@@ -146,6 +150,7 @@
       <input type="file" id="restoreFile" accept=".json,application/json">
       <button class="primary" id="restoreFileBtn">Import file</button>
     </div>
+    <div class="drop-zone" id="restoreDrop">Drop .json backup file here</div>
     <textarea id="restoreText" placeholder="…or paste backup JSON here"></textarea>
     <button class="primary" id="restoreTextBtn" style="margin-top:8px">Import pasted JSON</button>
     <div id="backupResult"></div>
@@ -159,6 +164,7 @@
       <input type="file" id="backupFile" accept=".json,application/json">
       <button class="primary" id="fileBtn">Import file</button>
     </div>
+    <div class="drop-zone" id="backupDrop">Drop .json Sidebery dump here</div>
     <textarea id="backupText" placeholder="…or paste the dump JSON here"></textarea>
     <button class="primary" id="textBtn" style="margin-top:8px">Import pasted JSON</button>
     <div id="result"></div>

@@ -336,7 +336,7 @@ async function captureState() {
   const tabAssignments = [];
   for (const tab of tabs) {
     const panelId = await browser.sessions.getTabValue(tab.id, 'panel');
-    if (panelId) tabAssignments.push({ url: normalizeUrl(tab.url), panelId });
+    if (panelId) tabAssignments.push({ url: normalizeUrl(tab.url), panelId, title: tab.title || '' });
   }
   return {
     timestamp: Date.now(),
@@ -371,6 +371,7 @@ async function applySnapshot(snapshot) {
   // Working list of snapshot entries; consumed as current tabs are matched.
   const snapLeft = snapshot.tabAssignments.map(a => ({
     url: a.url,
+    title: a.title || '',
     panelId: validIds.has(a.panelId) ? a.panelId : fallback
   }));
 
@@ -396,10 +397,19 @@ async function applySnapshot(snapshot) {
     await browser.sessions.setTabValue(tabId, 'panel', panelId);
   }
 
-  // Open missing tabs in the background.
+  // Open missing tabs.
+  // they load lazily on first focus to avoid OOM.
   const opened = [];
-  for (const { url, panelId } of toOpen) {
-    const t = await browser.tabs.create({ url, active: false });
+  for (const { url, panelId, title } of toOpen) {
+    let t;
+    try {
+      // title must be non-empty or older Firefox silently drops the discarded
+      // flag and loads the page; fall back to the URL as the label.
+      t = await browser.tabs.create({ url, active: false, discarded: true, title: title || url });
+    } catch {
+      // Some URLs can't be created discarded (e.g. title mismatch); fall back.
+      t = await browser.tabs.create({ url, active: false });
+    }
     await browser.sessions.setTabValue(t.id, 'panel', panelId);
     opened.push(t);
   }

@@ -1,6 +1,18 @@
 const send = (msg) => browser.runtime.sendMessage(msg);
 const out = document.getElementById('result');
 
+function setupDropZone(zone, handler) {
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    zone.classList.remove('over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    handler(await file.text());
+  });
+}
+
 // --- Glossary scrollspy: highlight the nav link of the section in view ----
 (() => {
   const links = [...document.querySelectorAll('nav.toc a')];
@@ -111,6 +123,9 @@ document.getElementById('restoreTextBtn').addEventListener('click', () => {
   doRestore(text);
 });
 
+setupDropZone(document.getElementById('restoreDrop'), doRestore);
+setupDropZone(document.getElementById('backupDrop'), doImport);
+
 // --- Tab grouping --------------------------------------------------------
 
 const groupToggle = document.getElementById('groupToggle');
@@ -202,17 +217,25 @@ async function loadShortcuts() {
     row.className = 'sc-row';
     row.dataset.name = cmd.name;
     const label = SC_LABELS[cmd.name] || cmd.description || cmd.name;
-    row.innerHTML = `
-      <span class="sc-label">${label}</span>
-      <span class="sc-key">${renderKeys(cmd.shortcut)}</span>
-      <button class="sc-set">Set</button>
-      <button class="sc-clear" title="Clear">✕</button>
-    `;
-    row.querySelector('.sc-set').addEventListener('click', () => {
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'sc-label';
+    labelSpan.textContent = label;
+    const keySpan = document.createElement('span');
+    keySpan.className = 'sc-key';
+    keySpan.textContent = renderKeys(cmd.shortcut);
+    const setBtn = document.createElement('button');
+    setBtn.className = 'sc-set';
+    setBtn.textContent = 'Set';
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'sc-clear';
+    clearBtn.title = 'Clear';
+    clearBtn.textContent = '✕';
+    row.append(labelSpan, keySpan, setBtn, clearBtn);
+    setBtn.addEventListener('click', () => {
       if (recording === cmd.name) stopRecording();
       else startRecording(cmd.name, row);
     });
-    row.querySelector('.sc-clear').addEventListener('click', () => setShortcut(cmd.name, ''));
+    clearBtn.addEventListener('click', () => setShortcut(cmd.name, ''));
     scList.appendChild(row);
   }
 }
@@ -286,14 +309,24 @@ function renderSnapshots(snapshots) {
     const idx = snapshots.length - 1 - revIdx;
     const el = document.createElement('div');
     el.className = 'snap-item';
-    el.innerHTML = `
-      <div class="snap-item-info">
-        <div class="snap-item-time">${fmtTime(snap.timestamp)}</div>
-        <div class="snap-item-meta">${snap.panels.length} panel(s) · ${snap.tabAssignments.length} tab(s)</div>
-      </div>
-      <button class="secondary snap-rollback" data-idx="${idx}">Rollback</button>
-      <button class="danger snap-delete" data-idx="${idx}">✕</button>
-    `;
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'snap-item-info';
+    const timeDiv = document.createElement('div');
+    timeDiv.className = 'snap-item-time';
+    timeDiv.textContent = fmtTime(snap.timestamp);
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'snap-item-meta';
+    metaDiv.textContent = `${snap.panels.length} panel(s) · ${snap.tabAssignments.length} tab(s)`;
+    infoDiv.append(timeDiv, metaDiv);
+    const rollbackBtn = document.createElement('button');
+    rollbackBtn.className = 'secondary snap-rollback';
+    rollbackBtn.dataset.idx = idx;
+    rollbackBtn.textContent = 'Rollback';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'danger snap-delete';
+    deleteBtn.dataset.idx = idx;
+    deleteBtn.textContent = '✕';
+    el.append(infoDiv, rollbackBtn, deleteBtn);
     list.appendChild(el);
   });
 
