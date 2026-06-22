@@ -9,7 +9,7 @@ Houdini would approve 🎩
   <img src="icons/icon.svg" alt="Houdini" width="200">
 </p>
 
-<video src="docs/media/panels.webm" autoplay loop muted playsinline></video>
+<p align="center"><img src="docs/media/panels.gif" alt="Houdini demo"></p>
 
 ---
 
@@ -31,7 +31,7 @@ Hidden tabs aren't closed — they keep their state and reappear the moment you 
 | **Toolbar popup** | Add, rename, reorder, remove and switch panels from one click. |
 | **Cross-panel search** | Find a tab in _any_ panel by title or URL; jump to it and Houdini switches panels for you. |
 | **Keyboard shortcuts** | Cycle or jump to panels from the keyboard; remap keys in Settings. |
-| **Sub-tab grouping** | Optionally drop tabs you open from a link into their opener's native Firefox tab group. |
+| **Sub-panel tab grouping** | Optionally drop tabs you open from a link into their opener's native Firefox tab group. |
 | **Automatic snapshots** | Periodic backups of your panels + tab assignments, with one-click rollback. |
 | **Backup & restore** | Export your panels + tab assignments to a file; re-import on another machine. |
 | **Sidebery import** | Migrate your existing Sidebery panels and tab grouping. |
@@ -41,16 +41,10 @@ Hidden tabs aren't closed — they keep their state and reappear the moment you 
 Open the toolbar popup to see every panel with its live tab count. Click **Open** to switch — the active panel is outlined.
 Add, remove, or rename panel; pick an icon from the palette, reorder with the arrows.
 
-> _Placeholder: screenshot of the popup with several panels._
-> `docs/media/popup.png`
-
 ### Cross-panel tab search
 
 The search bar at the top of the popup filters every open tab — across _any_ panel — by title or URL. Each
 result shows which panel it belongs to. Click it and Houdini switches to that panel and focuses the tab.
-
-> _Placeholder: screenshot of search results with panel badges._
-> `docs/media/search.png`
 
 ### Keyboard shortcuts
 
@@ -66,10 +60,7 @@ Switch panels without touching the mouse. Defaults:
 Remap any of them — or assign the panel-jump keys — right from **Settings → Keyboard shortcuts**:
 click **Set**, press your combo (needs <kbd>Ctrl</kbd> or <kbd>Alt</kbd>), done. No `about:addons` detour.
 
-> _Placeholder: screenshot of the Settings keyboard-shortcuts editor._
-> `docs/media/shortcuts.png`
-
-### Sub-tab grouping
+### Sub-panel tab grouping
 
 Off by default. When enabled (**Settings → Tab grouping**), any tab you open _from_ another — a link in
 a new tab, "open in new tab" — joins its opener's **native Firefox tab group**. If the opener isn't
@@ -78,9 +69,6 @@ its opener's group, so a whole chain of links lands in the same group rather tha
 
 Needs a Firefox version with the tab-groups API — the toggle disables itself and says so if yours
 doesn't have it.
-
-> _Placeholder: screenshot of a tab group formed from a link._
-> `docs/media/grouping.png`
 
 ### Automatic snapshots & rollback
 
@@ -97,9 +85,6 @@ since closed and closing ones opened afterward, so the window matches that point
 Snapshots use Firefox alarms, so the schedule survives browser restarts: if Firefox was closed when a
 snapshot was due, it runs on next launch.
 
-> _Placeholder: screenshot of the Settings page snapshot list._
-> `docs/media/snapshots.png`
-
 ### Backup & restore
 
 Snapshots live inside the browser profile — fine for quick rollbacks, gone if the profile is. For a
@@ -110,19 +95,11 @@ reinstall to recreate the exact same setup.
 > ⚠️ Restoring is destructive — it replaces all current panels and re-tags every open tab, just like a
 > rollback. You'll be asked to confirm.
 
-> _Placeholder: screenshot of the Settings backup & restore section._
-> `docs/media/backup.png`
-
 ---
 
 ## Installation
 
-Install from the Firefox Add-ons store:
-
-> **Get Houdini for Firefox** — _link TBA_
-
-That's it — no manual setup. Once installed, the Houdini icon appears in your toolbar; click it to start
-creating panels.
+Install from the Firefox Add-ons store: [**Houdini**](https://addons.mozilla.org/en-US/firefox/addon/houdini/)
 
 ---
 
@@ -160,9 +137,6 @@ full storage dump:
 
 Houdini reads Sidebery's open-tab cache (`tabsDataCache`) to match each tab's URL to its panel; tabs whose
 URL it can't match land in the first panel.
-
-> _Placeholder: screenshot of the about:debugging → Inspect → Console step._
-> `docs/media/sidebery-dump.png`
 
 ---
 
