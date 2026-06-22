@@ -97,6 +97,7 @@ async function switchPanel(targetPanel) {
     tabsToShow.push(newTab.id);
   } else {
     await browser.tabs.show(tabsToShow);
+    await restoreGroups(tabsToShow);
   }
 
   // If the tab we're leaving is about to be hidden, move focus onto the tab we
@@ -109,7 +110,11 @@ async function switchPanel(targetPanel) {
     await browser.tabs.update(focusId, { active: true });
   }
 
-  if (tabsToHide.length > 0) await browser.tabs.hide(tabsToHide);
+  // Dissolve groups whose tabs are all leaving — tabs.hide() can't hide grouped tabs.
+  if (tabsToHide.length > 0) {
+    await saveAndUngroup(tabsToHide, allTabs);
+    await browser.tabs.hide(tabsToHide);
+  }
 
   notifyChanged();
 }
@@ -538,6 +543,7 @@ async function moveTabsToPanel(tabIds, panelId) {
 
   if (panelId === activePanel) {
     await browser.tabs.show(expandedIds);
+    await restoreGroups(expandedIds);
   } else {
     // If the active tab is being moved, focus a tab staying in current panel.
     const activeMoved = winTabs.find(t => t.active && tabIdSet.has(t.id));
@@ -555,6 +561,8 @@ async function moveTabsToPanel(tabIds, panelId) {
         await browser.tabs.update(target, { active: true });
       }
     }
+    // Dissolve groups before hiding — tabs.hide() cannot hide grouped tabs.
+    await saveAndUngroup(expandedIds, winTabs);
     await browser.tabs.hide(expandedIds);
   }
 
@@ -609,6 +617,55 @@ function notifyChanged() {
 // True only if this Firefox exposes the WebExtension tab-groups API.
 function tabGroupsSupported() {
   return !!(browser.tabs && browser.tabs.group && browser.tabGroups);
+}
+
+// browser.tabs.hide() silently skips tabs that are inside a native tab group.
+// Before hiding, dissolve groups whose every member is being hidden; persist
+// group metadata in session storage so they can be reconstructed on show.
+async function saveAndUngroup(tabIdArray, allWinTabs) {
+  if (!tabGroupsSupported()) return;
+  const hideSet = new Set(tabIdArray);
+  const meta = new Map(); // groupId -> { title, color, memberIds[] }
+  for (const t of allWinTabs) {
+    if (hideSet.has(t.id) && t.groupId != null && t.groupId !== -1) {
+      if (!meta.has(t.groupId)) meta.set(t.groupId, { title: '', color: '', memberIds: [] });
+      meta.get(t.groupId).memberIds.push(t.id);
+    }
+  }
+  for (const [gid, info] of meta) {
+    // Skip groups that straddle panels — don't dissolve groups with visible members.
+    const allMembers = allWinTabs.filter(t => t.groupId === gid).map(t => t.id);
+    if (!allMembers.every(id => hideSet.has(id))) continue;
+    try {
+      const g = await browser.tabGroups.get(gid);
+      info.title = g.title || '';
+      info.color = g.color || '';
+    } catch {}
+    for (const tid of info.memberIds) {
+      await browser.sessions.setTabValue(tid, 'savedGroup', { groupId: gid, title: info.title, color: info.color });
+    }
+    try { await browser.tabs.ungroup(info.memberIds); } catch {}
+  }
+}
+
+// After showing tabs, rebuild any groups that were dissolved by saveAndUngroup.
+async function restoreGroups(tabIdArray) {
+  if (!tabGroupsSupported()) return;
+  const byOriginGroup = new Map(); // original groupId -> { title, color, tabIds[] }
+  for (const tid of tabIdArray) {
+    const saved = await browser.sessions.getTabValue(tid, 'savedGroup');
+    if (!saved) continue;
+    await browser.sessions.removeTabValue(tid, 'savedGroup');
+    if (!byOriginGroup.has(saved.groupId))
+      byOriginGroup.set(saved.groupId, { title: saved.title, color: saved.color, tabIds: [] });
+    byOriginGroup.get(saved.groupId).tabIds.push(tid);
+  }
+  for (const [, info] of byOriginGroup) {
+    try {
+      const newGid = await browser.tabs.group({ tabIds: info.tabIds });
+      if (info.title || info.color) await browser.tabGroups.update(newGid, { title: info.title, color: info.color });
+    } catch {}
+  }
 }
 
 async function getGroupSubtabs() {
