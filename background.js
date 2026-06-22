@@ -5,6 +5,10 @@ const DEFAULT_PANELS = [
   { id: 'default', name: 'General', icon: '📁' }
 ];
 
+// In-memory cache so onCreated can tag new tabs without waiting for storage,
+// preventing the race where switchPanel adopts an untagged mid-flight tab.
+let activePanelCache = null;
+
 function uid() {
   return 'p_' + Math.random().toString(36).slice(2, 10);
 }
@@ -21,6 +25,7 @@ async function getPanels() {
     activePanel = panels[0].id;
     await browser.storage.local.set({ activePanel });
   }
+  activePanelCache = activePanel;
   return { panels, activePanel };
 }
 
@@ -55,6 +60,10 @@ async function setLastActiveForPanel(panelId, tabId) {
 async function switchPanel(targetPanel) {
   const { panels, activePanel: prevPanel } = await getPanels();
   if (!panels.some(p => p.id === targetPanel)) return;
+
+  // Update cache immediately so any onCreated firing during this async
+  // function tags new tabs to the right panel rather than appearing orphaned.
+  activePanelCache = targetPanel;
 
   const allTabs = await browser.tabs.query({ currentWindow: true });
 
@@ -110,7 +119,7 @@ async function addPanel(name, icon) {
   const panel = { id: uid(), name: name || 'Panel', icon: icon || '📄' };
   panels.push(panel);
   await savePanels(panels);
-  notifyChanged();
+  await switchPanel(panel.id); // switches + auto-creates new tab in empty panel
   return panel;
 }
 
@@ -505,23 +514,37 @@ if (browser.commands) {
 // --- Move tab to panel (right-click menu) ---------------------------------
 
 // Re-tag one tab into another panel, then fix visibility in its window.
-async function moveTabToPanel(tabId, panelId) {
+async function moveTabsToPanel(tabIds, panelId) {
   const { panels, activePanel } = await getPanels();
   if (!panels.some(p => p.id === panelId)) return;
 
-  await browser.sessions.setTabValue(tabId, 'panel', panelId);
+  const winTabs = await browser.tabs.query({ currentWindow: true });
 
-  const tab = await browser.tabs.get(tabId);
+  // Expand selection: if any selected tab is in a native tab group,
+  // include all other members of that group.
+  const tabIdSet = new Set(tabIds);
+  const groupIds = new Set();
+  for (const t of winTabs) {
+    if (tabIdSet.has(t.id) && t.groupId != null && t.groupId !== -1) {
+      groupIds.add(t.groupId);
+    }
+  }
+  for (const t of winTabs) {
+    if (t.groupId != null && groupIds.has(t.groupId)) tabIdSet.add(t.id);
+  }
+  const expandedIds = [...tabIdSet];
+
+  await Promise.all(expandedIds.map(id => browser.sessions.setTabValue(id, 'panel', panelId)));
 
   if (panelId === activePanel) {
-    await browser.tabs.show(tabId);
+    await browser.tabs.show(expandedIds);
   } else {
-    // Hiding the focused tab needs focus moved to a tab that stays visible.
-    if (tab.active) {
-      const winTabs = await browser.tabs.query({ windowId: tab.windowId });
+    // If the active tab is being moved, focus a tab staying in current panel.
+    const activeMoved = winTabs.find(t => t.active && tabIdSet.has(t.id));
+    if (activeMoved) {
       let target = null;
       for (const t of winTabs) {
-        if (t.id === tabId) continue;
+        if (tabIdSet.has(t.id)) continue;
         const p = await browser.sessions.getTabValue(t.id, 'panel');
         if (p === activePanel) { target = t.id; break; }
       }
@@ -532,7 +555,7 @@ async function moveTabToPanel(tabId, panelId) {
         await browser.tabs.update(target, { active: true });
       }
     }
-    await browser.tabs.hide(tabId);
+    await browser.tabs.hide(expandedIds);
   }
 
   notifyChanged();
@@ -566,7 +589,12 @@ if (browser.menus) {
   browser.menus.onClicked.addListener((info, tab) => {
     if (!tab || typeof info.menuItemId !== 'string') return;
     if (!info.menuItemId.startsWith('houdini-move:')) return;
-    moveTabToPanel(tab.id, info.menuItemId.slice('houdini-move:'.length));
+    const panelId = info.menuItemId.slice('houdini-move:'.length);
+    // info.selectedTabIds contains all highlighted tabs (Firefox 63+); fall back to single tab.
+    const tabIds = (Array.isArray(info.selectedTabIds) && info.selectedTabIds.length > 0)
+      ? info.selectedTabIds
+      : [tab.id];
+    moveTabsToPanel(tabIds, panelId);
   });
 }
 
@@ -629,8 +657,8 @@ async function groupSubtab(tab) {
 
 // Tag every new tab with the currently active panel; group sub-tabs if enabled.
 browser.tabs.onCreated.addListener(async (tab) => {
-  const { activePanel } = await getPanels();
-  await browser.sessions.setTabValue(tab.id, 'panel', activePanel);
+  const panelId = activePanelCache || (await getPanels()).activePanel;
+  await browser.sessions.setTabValue(tab.id, 'panel', panelId);
   if (await getGroupSubtabs()) await groupSubtab(tab);
 });
 
