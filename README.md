@@ -1,14 +1,15 @@
 # Houdini
 
-Houdini brings tab panels straight into Firefox's own sidebar — no extra UI, no sidebar replacement.
-Pick a panel — every tab that doesn't belong disappears. Houdini would approve.
+Houdini brings Opera GX tab workspaces straight into Firefox's own sidebar.
+Pick a panel and every tab that doesn't belong disappears.
+
+Houdini would approve 🎩
 
 <p align="center">
-  <img src="icon.svg" alt="Houdini" width="200">
+  <img src="icons/icon.svg" alt="Houdini" width="200">
 </p>
 
-> _Placeholder: hero GIF showing a panel switch — clutter vanishing, the chosen panel's tabs remaining._
-> `docs/media/hero.gif`
+<video src="docs/media/panels.webm" autoplay loop muted playsinline></video>
 
 ---
 
