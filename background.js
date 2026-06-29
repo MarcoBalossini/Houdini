@@ -635,10 +635,10 @@ function tabGroupsSupported() {
 async function saveAndUngroup(tabIdArray, allWinTabs) {
   if (!tabGroupsSupported()) return;
   const hideSet = new Set(tabIdArray);
-  const meta = new Map(); // groupId -> { title, color, memberIds[] }
+  const meta = new Map(); // groupId -> { title, color, collapsed, memberIds[] }
   for (const t of allWinTabs) {
     if (hideSet.has(t.id) && t.groupId != null && t.groupId !== -1) {
-      if (!meta.has(t.groupId)) meta.set(t.groupId, { title: '', color: '', memberIds: [] });
+      if (!meta.has(t.groupId)) meta.set(t.groupId, { title: '', color: '', collapsed: false, memberIds: [] });
       meta.get(t.groupId).memberIds.push(t.id);
     }
   }
@@ -650,9 +650,10 @@ async function saveAndUngroup(tabIdArray, allWinTabs) {
       const g = await browser.tabGroups.get(gid);
       info.title = g.title || '';
       info.color = g.color || '';
+      info.collapsed = g.collapsed || false;
     } catch {}
     for (const tid of info.memberIds) {
-      await browser.sessions.setTabValue(tid, 'savedGroup', { groupId: gid, title: info.title, color: info.color });
+      await browser.sessions.setTabValue(tid, 'savedGroup', { groupId: gid, title: info.title, color: info.color, collapsed: info.collapsed });
     }
     try { await browser.tabs.ungroup(info.memberIds); } catch {}
   }
@@ -667,13 +668,19 @@ async function restoreGroups(tabIdArray) {
     if (!saved) continue;
     await browser.sessions.removeTabValue(tid, 'savedGroup');
     if (!byOriginGroup.has(saved.groupId))
-      byOriginGroup.set(saved.groupId, { title: saved.title, color: saved.color, tabIds: [] });
+      byOriginGroup.set(saved.groupId, { title: saved.title, color: saved.color, collapsed: saved.collapsed === true, tabIds: [] });
     byOriginGroup.get(saved.groupId).tabIds.push(tid);
   }
   for (const [, info] of byOriginGroup) {
     try {
       const newGid = await browser.tabs.group({ tabIds: info.tabIds });
       if (info.title || info.color) await browser.tabGroups.update(newGid, { title: info.title, color: info.color });
+      // Restore collapsed state last. Firefox refuses to collapse a group that
+      // holds the active tab, so this is best-effort and may no-op for the
+      // panel's focused group.
+      if (info.collapsed) {
+        try { await browser.tabGroups.update(newGid, { collapsed: true }); } catch {}
+      }
     } catch {}
   }
 }
