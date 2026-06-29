@@ -194,11 +194,29 @@ function buildShortcut(e) {
   return { shortcut: [...mods, key].join('+') };
 }
 
+// A muted placeholder span (e.g. "unset", "press keys…").
+function noneSpan(text) {
+  const span = document.createElement('span');
+  span.className = 'none';
+  span.textContent = text;
+  return span;
+}
+
 // Pretty-print a stored shortcut ("Alt+Period") as kbd elements.
 function renderKeys(shortcut) {
-  if (!shortcut) return '<span class="none">unset</span>';
+  const frag = document.createDocumentFragment();
+  if (!shortcut) {
+    frag.appendChild(noneSpan('unset'));
+    return frag;
+  }
   const pretty = { Period: '.', Comma: ',', Command: '⌘' };
-  return shortcut.split('+').map(k => `<kbd>${pretty[k] || k}</kbd>`).join('+');
+  shortcut.split('+').forEach((k, i) => {
+    if (i) frag.appendChild(document.createTextNode('+'));
+    const kbd = document.createElement('kbd');
+    kbd.textContent = pretty[k] || k;
+    frag.appendChild(kbd);
+  });
+  return frag;
 }
 
 async function loadShortcuts() {
@@ -222,7 +240,7 @@ async function loadShortcuts() {
     labelSpan.textContent = label;
     const keySpan = document.createElement('span');
     keySpan.className = 'sc-key';
-    keySpan.textContent = renderKeys(cmd.shortcut);
+    keySpan.appendChild(renderKeys(cmd.shortcut));
     const setBtn = document.createElement('button');
     setBtn.className = 'sc-set';
     setBtn.textContent = 'Set';
@@ -244,7 +262,7 @@ function startRecording(name, row) {
   if (recording) stopRecording();
   recording = name;
   row.classList.add('recording');
-  row.querySelector('.sc-key').innerHTML = '<span class="none">press keys…</span>';
+  row.querySelector('.sc-key').replaceChildren(noneSpan('press keys…'));
   row.querySelector('.sc-set').textContent = 'Cancel';
   scResult.textContent = '';
 }
