@@ -39,6 +39,8 @@ async function panelTabCounts() {
   const tabs = await browser.tabs.query({ currentWindow: true });
   const counts = {};
   for (const tab of tabs) {
+    const panelPinned = (await browser.sessions.getTabValue(tab.id, 'panelPinned')) === true;
+    if (tab.pinned && !panelPinned) continue; // global pin: owned by no panel
     const p = (await browser.sessions.getTabValue(tab.id, 'panel')) || null;
     if (p) counts[p] = (counts[p] || 0) + 1;
   }
@@ -77,16 +79,29 @@ async function switchPanel(targetPanel) {
 
   const tabsToShow = [];
   const tabsToHide = [];
+  const toPin = [];            // per-panel pins entering their panel -> pin them
+  const toUnpinThenHide = [];  // per-panel pins leaving their panel -> unpin first
 
   for (const tab of allTabs) {
+    const panelPinned = (await browser.sessions.getTabValue(tab.id, 'panelPinned')) === true;
+
+    // Global pin: natively pinned but not flagged per-panel. Lives in every
+    // panel, so Houdini never hides or re-tags it.
+    if (tab.pinned && !panelPinned) continue;
+
     let p = await browser.sessions.getTabValue(tab.id, 'panel');
     if (!p || !panels.some(x => x.id === p)) {
       // Untagged or orphaned tab -> adopt into the panel being opened.
       p = targetPanel;
       await browser.sessions.setTabValue(tab.id, 'panel', targetPanel);
     }
-    if (p === targetPanel) tabsToShow.push(tab.id);
-    else tabsToHide.push(tab.id);
+    if (p === targetPanel) {
+      tabsToShow.push(tab.id);
+      if (panelPinned && !tab.pinned) toPin.push(tab.id);
+    } else {
+      if (tab.pinned) toUnpinThenHide.push(tab.id); // per-panel pin leaving
+      tabsToHide.push(tab.id);
+    }
   }
 
   // Show the panel's tabs first — a hidden tab can't be made active, so we must
@@ -98,6 +113,11 @@ async function switchPanel(targetPanel) {
   } else {
     await browser.tabs.show(tabsToShow);
     await restoreGroups(tabsToShow);
+    // Re-pin this panel's per-panel pins. Firefox appends them after any global
+    // pins, giving the [global][global][per-panel] ordering.
+    for (const id of toPin) {
+      try { await browser.tabs.update(id, { pinned: true }); } catch {}
+    }
   }
 
   // If the tab we're leaving is about to be hidden, move focus onto the tab we
@@ -112,6 +132,10 @@ async function switchPanel(targetPanel) {
 
   // Dissolve groups whose tabs are all leaving — tabs.hide() can't hide grouped tabs.
   if (tabsToHide.length > 0) {
+    // A pinned tab can't be hidden; unpin the leaving per-panel pins first.
+    for (const id of toUnpinThenHide) {
+      try { await browser.tabs.update(id, { pinned: false }); } catch {}
+    }
     await saveAndUngroup(tabsToHide, allTabs);
     await browser.tabs.hide(tabsToHide);
   }
@@ -572,6 +596,14 @@ async function moveTabsToPanel(tabIds, panelId) {
   if (panelId === activePanel) {
     await browser.tabs.show(expandedIds);
     await restoreGroups(expandedIds);
+    // Re-pin any per-panel pins that now belong to the visible panel.
+    for (const id of expandedIds) {
+      const t = winTabs.find(x => x.id === id);
+      const panelPinned = (await browser.sessions.getTabValue(id, 'panelPinned')) === true;
+      if (panelPinned && t && !t.pinned) {
+        try { await browser.tabs.update(id, { pinned: true }); } catch {}
+      }
+    }
   } else {
     // If the active tab is being moved, focus a tab staying in current panel.
     const activeMoved = winTabs.find(t => t.active && tabIdSet.has(t.id));
@@ -589,11 +621,45 @@ async function moveTabsToPanel(tabIds, panelId) {
         await browser.tabs.update(target, { active: true });
       }
     }
+    // Global pins live in every panel and can't be hidden; per-panel pins must be
+    // unpinned before hiding. Build the hide set accordingly.
+    const hideIds = [];
+    for (const id of expandedIds) {
+      const t = winTabs.find(x => x.id === id);
+      const panelPinned = (await browser.sessions.getTabValue(id, 'panelPinned')) === true;
+      if (t && t.pinned && !panelPinned) continue; // global pin: keep it visible
+      if (t && t.pinned && panelPinned) {
+        try { await browser.tabs.update(id, { pinned: false }); } catch {}
+      }
+      hideIds.push(id);
+    }
     // Dissolve groups before hiding — tabs.hide() cannot hide grouped tabs.
-    await saveAndUngroup(expandedIds, winTabs);
-    await browser.tabs.hide(expandedIds);
+    await saveAndUngroup(hideIds, winTabs);
+    await browser.tabs.hide(hideIds);
   }
 
+  notifyChanged();
+}
+
+// Toggle whether a tab is pinned to the currently active panel. A per-panel pin
+// renders as a native pinned tab only while its panel is active; other panels
+// unpin + hide it. Native pins without this flag are treated as global.
+async function togglePanelPin(tab) {
+  if (!tab) return;
+  const { activePanel } = await getPanels();
+  const panelPinned = (await browser.sessions.getTabValue(tab.id, 'panelPinned')) === true;
+  if (panelPinned) {
+    // Clear the flag first so the pinned-change listener treats this as our own
+    // unpin, not a manual one.
+    await browser.sessions.removeTabValue(tab.id, 'panelPinned');
+    try { await browser.tabs.update(tab.id, { pinned: false }); } catch {}
+  } else {
+    // Pin it to the panel you're looking at. Pinning ejects the tab from any
+    // native group automatically.
+    await browser.sessions.setTabValue(tab.id, 'panel', activePanel);
+    await browser.sessions.setTabValue(tab.id, 'panelPinned', true);
+    try { await browser.tabs.update(tab.id, { pinned: true }); } catch {}
+  }
   notifyChanged();
 }
 
@@ -619,11 +685,25 @@ async function rebuildTabMenu() {
       contexts: ['tab']
     });
   }
+
+  // Toggle a per-panel pin on the right-clicked tab. Title is corrected to
+  // reflect the tab's current state in menus.onShown below.
+  browser.menus.create({
+    id: 'houdini-pin-toggle',
+    title: 'Pin on this panel',
+    contexts: ['tab']
+  });
 }
 
 if (browser.menus) {
   browser.menus.onClicked.addListener((info, tab) => {
     if (!tab || typeof info.menuItemId !== 'string') return;
+
+    if (info.menuItemId === 'houdini-pin-toggle') {
+      togglePanelPin(tab);
+      return;
+    }
+
     if (!info.menuItemId.startsWith('houdini-move:')) return;
     const panelId = info.menuItemId.slice('houdini-move:'.length);
     // info.selectedTabIds contains all highlighted tabs (Firefox 63+); fall back to single tab.
@@ -632,6 +712,18 @@ if (browser.menus) {
       : [tab.id];
     moveTabsToPanel(tabIds, panelId);
   });
+
+  // Correct the pin-toggle label to match the right-clicked tab's current state.
+  if (browser.menus.onShown) {
+    browser.menus.onShown.addListener(async (info, tab) => {
+      if (!tab || !Array.isArray(info.contexts) || !info.contexts.includes('tab')) return;
+      const panelPinned = (await browser.sessions.getTabValue(tab.id, 'panelPinned')) === true;
+      browser.menus.update('houdini-pin-toggle', {
+        title: panelPinned ? 'Unpin from this panel' : 'Pin on this panel'
+      });
+      browser.menus.refresh();
+    });
+  }
 }
 
 // --- wiring ---------------------------------------------------------------
@@ -787,6 +879,10 @@ browser.runtime.onMessage.addListener(async (msg) => {
     case 'activateTab':  return browser.tabs.update(msg.tabId, { active: true });
     case 'closeTab':     return browser.tabs.remove(msg.tabId);
     case 'newTab':       return browser.tabs.create({ active: true });
+    case 'togglePanelPin': {
+      const t = await browser.tabs.get(msg.tabId).catch(() => null);
+      return togglePanelPin(t);
+    }
   }
 });
 
@@ -838,6 +934,43 @@ for (const ev of ['onActivated', 'onUpdated', 'onRemoved', 'onMoved']) {
   if (browser.tabs[ev]) browser.tabs[ev].addListener(() => notifyChanged());
 }
 
+// If the user manually unpins a per-panel pin that's visible in the active panel,
+// respect it: drop the flag so we don't re-pin it on the next switch. Houdini's
+// own unpin-on-leave retags the tab to a non-active panel first, so it's excluded
+// by the panel === activePanel check.
+browser.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (changeInfo.pinned !== false) return;
+  const panelPinned = (await browser.sessions.getTabValue(tabId, 'panelPinned')) === true;
+  if (!panelPinned) return;
+  const { activePanel } = await getPanels();
+  const p = await browser.sessions.getTabValue(tabId, 'panel');
+  if (p === activePanel) {
+    await browser.sessions.removeTabValue(tabId, 'panelPinned');
+    notifyChanged();
+  }
+}, { properties: ['pinned'] });
+
+// On load, reconcile per-panel pins with the active panel. Firefox restores the
+// native pinned/hidden state across restarts, which can leave a per-panel pin
+// pinned in the wrong panel; fix those here.
+async function reconcilePins() {
+  const { activePanel } = await getPanels();
+  const tabs = await browser.tabs.query({});
+  for (const tab of tabs) {
+    const panelPinned = (await browser.sessions.getTabValue(tab.id, 'panelPinned')) === true;
+    if (!panelPinned) continue;
+    const p = await browser.sessions.getTabValue(tab.id, 'panel');
+    if (p === activePanel) {
+      if (tab.hidden) { try { await browser.tabs.show(tab.id); } catch {} }
+      if (!tab.pinned) { try { await browser.tabs.update(tab.id, { pinned: true }); } catch {} }
+    } else {
+      if (tab.pinned) { try { await browser.tabs.update(tab.id, { pinned: false }); } catch {} }
+      if (!tab.hidden && !tab.active) { try { await browser.tabs.hide(tab.id); } catch {} }
+    }
+  }
+}
+
 getPanels(); // ensure defaults exist on load
 initSnapshotAlarm();
 rebuildTabMenu();
+reconcilePins();
