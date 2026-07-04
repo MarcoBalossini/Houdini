@@ -2,93 +2,119 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Houdini — Import & Reset</title>
+  <title>Houdini — Settings</title>
   <link rel="icon" href="icons/icon-48.png">
+  <link rel="stylesheet" href="ui.css">
+  <script src="theme.js"></script>
   <style>
-    :root { color-scheme: dark; }
     html { scroll-behavior: smooth; }
-    body { margin: 0; padding: 28px; background: #1c1b22; color: #fff;
-           font: 14px system-ui, sans-serif; }
-    .layout { display: flex; gap: 36px; max-width: 880px; margin: 0 auto; align-items: flex-start; }
-    nav.toc { position: sticky; top: 28px; flex: none; width: 190px; }
-    nav.toc a { display: block; padding: 5px 10px; color: #fff; opacity: .55;
-                text-decoration: none; border-radius: 6px; font-size: 13px; }
-    nav.toc a:hover { opacity: .9; background: #26252c; }
-    nav.toc a.cat { opacity: .45; text-transform: uppercase; font-size: 11px; letter-spacing: .5px;
-                    margin-top: 14px; }
+    /* Settings copy is full-contrast — no grey text. Placeholders stay dimmer
+       so empty fields still read as empty. */
+    body { padding: 32px 28px; font-size: 14px;
+           --text-muted: var(--text); --text-faint: var(--text); }
+    input::placeholder, textarea::placeholder {
+      color: color-mix(in srgb, var(--text) 45%, transparent); }
+
+    /* main column centered in the viewport; nav floats beside it without
+       shifting the center (fixed, anchored left of the column) */
+    nav.toc { position: fixed; top: 32px; width: 200px;
+              left: max(16px, calc(50% - 580px));
+              padding: 12px; background: var(--bg);
+              border: 3px solid var(--secondary); border-radius: 16px; }
+    nav.toc a { display: block; padding: 6px 12px; color: var(--text-muted);
+                text-decoration: none; border-radius: 999px; font-size: 13px; }
+    nav.toc a:hover { color: var(--text);
+                      background: color-mix(in srgb, var(--secondary) 12%, transparent); }
+    nav.toc a.cat { color: var(--text-faint); text-transform: uppercase; font-size: 10.5px;
+                    font-weight: 600; letter-spacing: .6px; margin-top: 14px;
+                    pointer-events: none; }
     nav.toc a.cat:first-child { margin-top: 0; }
-    nav.toc a.sub { padding-left: 20px; }
-    nav.toc a.active { opacity: 1; background: #2b2a33; box-shadow: inset 2px 0 0 #0060df; }
-    main { flex: 1; min-width: 0; max-width: 620px; }
-    h2, h3 { scroll-margin-top: 24px; }
-    @media (max-width: 760px) { nav.toc { display: none; } }
-    h1 { font-size: 20px; display: flex; align-items: center; gap: 12px; }
+    nav.toc a.sub { padding-left: 18px; }
+    nav.toc a.active { color: var(--text); font-weight: 600;
+                       background: color-mix(in srgb, var(--accent) 15%, transparent); }
+    @media (max-width: 1100px) { nav.toc { display: none; } }
+
+    main { max-width: 620px; margin: 0 auto; }
+    h1 { font-size: 20px; display: flex; align-items: center; gap: 12px; margin: 0 0 6px; }
     h1 img { width: 30px; height: 30px; }
-    h2 { font-size: 17px; margin: 38px 0 4px; padding-bottom: 7px;
-         border-bottom: 1px solid #3a3942; }
-    h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; opacity: .6;
-         margin: 22px 0 8px; }
-    .card { background: #2b2a33; border-radius: 10px; padding: 18px; }
-    p { opacity: .8; }
+    h2, h3 { scroll-margin-top: 28px; }
+    h2 { font-size: 16px; margin: 40px 0 4px; padding-bottom: 8px;
+         border-bottom: 2px solid color-mix(in srgb, var(--secondary) 40%, transparent); }
+    h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px;
+         color: var(--text-muted); margin: 24px 0 8px; font-weight: 600; }
+    p { color: var(--text-muted); }
+    p b { color: var(--text); }
+    .lead { margin-top: 0; }
+
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    input[type=file] { color: #ccc; }
-    textarea { width: 100%; box-sizing: border-box; height: 90px; background: #1c1b22;
-               border: 1px solid #42414d; border-radius: 6px; color: #fff; padding: 9px;
-               font: 12px monospace; resize: vertical; margin-top: 8px; }
-    .primary { background: #0060df; border: none; border-radius: 6px; color: #fff; cursor: pointer;
-               padding: 9px 16px; font: inherit; }
-    .primary:hover { background: #0250bb; }
-    .reset { background: #5a2a2a; border: none; border-radius: 6px; color: #fff; cursor: pointer;
-             padding: 9px 16px; font: inherit; }
-    .reset:hover { background: #7a3434; }
-    #result { margin-top: 12px; min-height: 1em; }
-    .ok { color: #6ad17f; } .err { color: #ff8a8a; }
-    details summary { cursor: pointer; opacity: .8; margin-top: 14px; }
-    pre { background: #111017; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px;
+    input[type=file] { color: var(--text-muted); }
+    textarea { width: 100%; box-sizing: border-box; height: 90px;
+               font: 12px/1.5 ui-monospace, monospace; resize: vertical; margin-top: 8px; }
+
+    #result, #backupResult, #snapResult, #shortcutResult { margin-top: 12px; min-height: 1em; }
+
+    details summary { cursor: pointer; color: var(--text-muted); margin-top: 14px; }
+    details summary:hover { color: var(--text); }
+    pre { background: var(--surface-2); border: 1px solid var(--border); padding: 12px;
+          border-radius: var(--radius-sm); overflow: auto; font-size: 12px;
           white-space: pre-wrap; }
-    code { background: #111017; padding: 1px 5px; border-radius: 4px; }
-    kbd { background: #111017; border: 1px solid #42414d; border-bottom-width: 2px;
-          border-radius: 5px; padding: 1px 6px; font: 12px monospace; }
-    label.toggle { display: flex; align-items: center; gap: 9px; cursor: pointer; }
-    label.toggle input { width: 16px; height: 16px; cursor: pointer; }
-    .sc-row { display: flex; align-items: center; gap: 10px; padding: 8px 0;
-              border-top: 1px solid #3a3942; }
+    code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+    kbd { background: var(--surface-2); border: 1px solid var(--border-strong);
+          border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px;
+          font: 12px ui-monospace, monospace; color: var(--text); }
+
+    label.toggle { display: flex; align-items: center; gap: 9px; cursor: pointer;
+                   color: var(--text); }
+    label.toggle input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+
+    .sc-row { display: flex; align-items: center; gap: 10px; padding: 9px 0;
+              border-top: 1px solid var(--border); }
     .sc-row:first-child { border-top: none; }
     .sc-label { flex: 1; }
     .sc-key { min-width: 110px; text-align: center; }
-    .sc-key .none { opacity: .4; font-size: 12px; }
-    .sc-row.recording .sc-key { color: #f0c674; }
-    .sc-row button { background: #42414d; border: none; border-radius: 6px; color: #fff;
-                     cursor: pointer; padding: 6px 12px; font: inherit; font-size: 12px; }
-    .sc-row button:hover { background: #52525e; }
-    .sc-row .sc-clear { background: #5a2a2a; }
-    .sc-row .sc-clear:hover { background: #7a3434; }
-    .snap-settings { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .sc-key .none { color: var(--text-faint); font-size: 12px; }
+    .sc-row.recording .sc-key { color: var(--warn); }
+    .sc-row button { padding: 4px 12px; font-size: 12px;
+                     border-radius: 999px; cursor: pointer; }
+    .sc-row .sc-set { background: transparent; color: var(--text);
+                      border: 2px solid color-mix(in srgb, var(--secondary) 60%, transparent); }
+    .sc-row .sc-set:hover { border-color: var(--secondary);
+                            background: color-mix(in srgb, var(--secondary) 12%, transparent); }
+    .sc-row .sc-clear { background: transparent; color: var(--danger); border: 2px solid var(--danger); }
+    .sc-row .sc-clear:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+    .snap-settings { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+                     margin-bottom: 14px; }
     .snap-settings label { display: flex; align-items: center; gap: 6px; }
-    .snap-settings input[type=number] { width: 64px; background: #1c1b22; border: 1px solid #42414d;
-      border-radius: 6px; color: #fff; padding: 6px 8px; font: inherit; }
+    .snap-settings input[type=number] { width: 64px; }
     #snapList { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-    .snap-item { background: #1c1b22; border-radius: 8px; padding: 10px 14px;
+    .snap-item { background: var(--bg);
+                 border: 2px solid color-mix(in srgb, var(--secondary) 55%, transparent);
+                 border-radius: 999px; padding: 8px 10px 8px 18px;
                  display: flex; align-items: center; gap: 10px; }
+    .snap-item:hover { border-color: var(--secondary); }
     .snap-item-info { flex: 1; }
     .snap-item-time { font-weight: 600; font-size: 13px; }
-    .snap-item-meta { opacity: .6; font-size: 12px; margin-top: 2px; }
-    .danger { background: #5a2a2a; border: none; border-radius: 6px; color: #fff; cursor: pointer;
-              padding: 6px 12px; font: inherit; font-size: 12px; }
-    .danger:hover { background: #7a3434; }
-    .secondary { background: #42414d; border: none; border-radius: 6px; color: #fff; cursor: pointer;
-                 padding: 6px 12px; font: inherit; font-size: 12px; }
-    .secondary:hover { background: #57565e; }
-    .drop-zone { border: 2px dashed #42414d; border-radius: 8px; padding: 18px; text-align: center;
-                 color: #888; font-size: 13px; margin-top: 10px; cursor: default;
-                 transition: border-color .15s, color .15s; }
-    .drop-zone.over { border-color: #0060df; color: #fff; }
+    .snap-item-meta { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+    .snap-item button { padding: 6px 12px; font-size: 12px; }
+    .snap-item .snap-delete { background: transparent; color: var(--danger); border: 2px solid var(--danger); }
+    .snap-item .snap-delete:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+    .drop-zone { border: 3px dashed color-mix(in srgb, var(--secondary) 60%, transparent);
+                 border-radius: 14px;
+                 padding: 18px; text-align: center; color: var(--text-faint);
+                 font-size: 13px; margin-top: 10px; cursor: default;
+                 transition: border-color .15s, color .15s, background .15s; }
+    .drop-zone.over { border-color: var(--secondary); color: var(--text);
+                      background: color-mix(in srgb, var(--secondary) 10%, transparent);
+                      box-shadow: inset 0 0 9px color-mix(in srgb, var(--secondary) 25%, transparent); }
   </style>
 </head>
 <body>
  <div class="layout">
   <nav class="toc" id="toc">
     <a class="cat" href="#cat-behavior">Behavior</a>
+    <a class="sub" href="#appearance">Appearance</a>
     <a class="sub" href="#tab-grouping">Tab grouping</a>
     <a class="sub" href="#keyboard-shortcuts">Keyboard shortcuts</a>
     <a class="cat" href="#cat-data">Backup &amp; data</a>
@@ -101,10 +127,21 @@
 
   <main>
   <h1><img src="icons/icon-48.png" alt="">Houdini</h1>
-  <p>Day-to-day panel editing (add, rename, reorder, remove, switch) lives in the toolbar popup.
-     This page holds the rest: behavior, backup &amp; data, and the danger zone.</p>
+  <p class="lead">Day-to-day panel editing (add, rename, reorder, remove, switch) lives in the
+     toolbar popup. This page holds the rest: behavior, backup &amp; data, and the danger zone.</p>
 
   <h2 id="cat-behavior">Behavior</h2>
+
+  <h3 id="appearance">Appearance</h3>
+  <div class="card">
+    <p style="margin-top:0">Theme for Houdini's popup and this page. <b>Auto</b> follows your
+       system setting.</p>
+    <div class="seg" id="themeSeg">
+      <button data-mode="auto">Auto</button>
+      <button data-mode="light">Light</button>
+      <button data-mode="dark">Dark</button>
+    </div>
+  </div>
 
   <h3 id="tab-grouping">Tab grouping</h3>
   <div class="card">
@@ -120,8 +157,8 @@
 
   <h3 id="keyboard-shortcuts">Keyboard shortcuts</h3>
   <div class="card">
-    <p>Click <b>Set</b>, then press your key combo (needs <kbd>Ctrl</kbd> or <kbd>Alt</kbd>).
-       <kbd>Esc</kbd> cancels.</p>
+    <p style="margin-top:0">Click <b>Set</b>, then press your key combo (needs <kbd>Ctrl</kbd> or
+       <kbd>Alt</kbd>). <kbd>Esc</kbd> cancels.</p>
     <div id="shortcuts"></div>
     <div id="shortcutResult"></div>
   </div>
@@ -130,7 +167,8 @@
 
   <h3 id="snapshots">Automatic snapshots</h3>
   <div class="card">
-    <p>Houdini periodically saves your panels and tab assignments. Roll back to any saved point.</p>
+    <p style="margin-top:0">Houdini periodically saves your panels and tab assignments. Roll back
+       to any saved point.</p>
     <div class="snap-settings">
       <label>Every <input type="number" id="snapPeriod" min="1" max="168"> hours</label>
       <label>Keep <input type="number" id="snapMax" min="1" max="200"> snapshots max</label>
@@ -143,8 +181,8 @@
 
   <h3 id="backup-restore">Backup &amp; restore</h3>
   <div class="card">
-    <p>Save your panels and tab assignments to a file, or restore them on another machine.
-       Restoring <b>replaces</b> all current panels and re-tags every open tab.</p>
+    <p style="margin-top:0">Save your panels and tab assignments to a file, or restore them on
+       another machine. Restoring <b>replaces</b> all current panels and re-tags every open tab.</p>
     <div class="row">
       <button class="primary" id="exportBtn">Export backup</button>
       <input type="file" id="restoreFile" accept=".json,application/json">
@@ -158,8 +196,8 @@
 
   <h3 id="sidebery">Import from Sidebery — replaces all current panels</h3>
   <div class="card">
-    <p>Pick a Sidebery dump file, <i>or</i> paste the dump JSON below. Both replace your current
-       panels and re-tag every open tab.</p>
+    <p style="margin-top:0">Pick a Sidebery dump file, <i>or</i> paste the dump JSON below. Both
+       replace your current panels and re-tag every open tab.</p>
     <div class="row">
       <input type="file" id="backupFile" accept=".json,application/json">
       <button class="primary" id="fileBtn">Import file</button>
@@ -182,7 +220,8 @@
 
   <h3 id="reset">Reset</h3>
   <div class="card">
-    <p>Collapse everything to a single default panel and move <b>all</b> tabs into it.</p>
+    <p style="margin-top:0">Collapse everything to a single default panel and move <b>all</b> tabs
+       into it.</p>
     <button class="reset" id="resetBtn">Reset everything</button>
   </div>
   </main>

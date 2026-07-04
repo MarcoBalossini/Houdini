@@ -28,15 +28,23 @@ function setupDropZone(zone, handler) {
     byId.get(id)?.classList.add('active');
   };
 
-  const spy = new IntersectionObserver((entries) => {
-    // Pick the heading nearest the top among those currently crossing the line.
-    const hit = entries.filter(e => e.isIntersecting)
-                       .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-    if (hit) setActive(hit.target.id);
-  }, { rootMargin: '0px 0px -78% 0px', threshold: 0 });
+  // The observer only wakes us when a heading crosses the top band; the actual
+  // pick is by geometry so short sections (e.g. Appearance) are never skipped:
+  // the current section is the last heading whose top sits above the line.
+  const pick = () => {
+    const line = window.innerHeight * 0.2;
+    let current = targets[0].id;
+    for (const t of targets) {
+      if (t.getBoundingClientRect().top <= line + 1) current = t.id;
+      else break;
+    }
+    setActive(current);
+  };
 
+  const spy = new IntersectionObserver(pick, { rootMargin: '0px 0px -80% 0px', threshold: 0 });
   targets.forEach(t => spy.observe(t));
-  setActive(targets[0].id);
+  window.addEventListener('scroll', pick, { passive: true });
+  pick();
 })();
 
 function showResult(res) {
@@ -392,6 +400,27 @@ document.getElementById('snapNowBtn').addEventListener('click', async () => {
 });
 
 loadSnapshots();
+
+// --- Appearance (theme mode) -----------------------------------------------
+// theme.js owns resolution + persistence; this just drives the segmented
+// control and repaints it when the mode changes (here or in the popup).
+
+const themeSeg = document.getElementById('themeSeg');
+
+function paintThemeSeg() {
+  const mode = document.documentElement.dataset.themeMode || 'auto';
+  themeSeg.querySelectorAll('button').forEach(b =>
+    b.classList.toggle('selected', b.dataset.mode === mode));
+}
+
+themeSeg.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-mode]');
+  if (btn) window.uiTheme.set(btn.dataset.mode);
+});
+
+new MutationObserver(paintThemeSeg)
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme-mode'] });
+paintThemeSeg();
 
 // --- Sidebery import snippet ---------------------------------------------
 

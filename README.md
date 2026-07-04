@@ -29,7 +29,8 @@ Hidden tabs aren't closed — they keep their state and reappear the moment you 
 | --- | --- |
 | **Panels** | Group tabs into named, icon-tagged panels. Switch to focus one; the rest hide. |
 | **Panel colors** | Give a panel a color and the whole browser chrome (tab bar, toolbar, URL bar, sidebar, menus) tints to match while it's active. |
-| **Toolbar popup** | Add, rename, reorder, remove and switch panels from one click. |
+| **Toolbar popup** | Click a panel to switch; add, rename, recolor, reorder (drag) and remove inline. |
+| **Dark & light theme** | Popup and settings follow your system theme, with a manual override. |
 | **Cross-panel search** | Find a tab in _any_ panel by title or URL; jump to it and Houdini switches panels for you. |
 | **Keyboard shortcuts** | Cycle or jump to panels from the keyboard; remap keys in Settings. |
 | **Sub-panel tab grouping** | Optionally drop tabs you open from a link into their opener's native Firefox tab group. |
@@ -39,8 +40,8 @@ Hidden tabs aren't closed — they keep their state and reappear the moment you 
 
 ### Panels & switching
 
-Open the toolbar popup to see every panel with its live tab count. Click **Open** to switch — the active panel is outlined.
-Add, remove, or rename panel; pick an icon from the palette, reorder with the arrows.
+Open the toolbar popup to see every panel with its live tab count. Click a panel to switch — the active one is highlighted with its color.
+The **⋯** button expands a panel inline to rename it, pick an icon or color, or remove it. Drag rows to reorder; **+ New panel** adds one.
 
 ### Cross-panel tab search
 

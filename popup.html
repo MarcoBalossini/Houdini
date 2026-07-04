@@ -2,163 +2,190 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <link rel="stylesheet" href="ui.css">
+  <script src="theme.js"></script>
   <style>
-    body { width: 340px; margin: 0; padding: 12px; background: #1c1b22; color: #fff;
-           font: 13px system-ui, sans-serif; }
-    header { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
-    header img { width: 26px; height: 26px; }
-    header .title { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
-    header .by { margin-left: auto; font-size: 10px; opacity: .4; text-transform: uppercase;
-                 letter-spacing: .5px; }
-    h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; opacity: .55;
-         margin: 14px 2px 8px; }
-    .row { display: flex; align-items: center; gap: 6px; padding: 6px; background: #2b2a33;
-           border-radius: 8px; margin-bottom: 5px; }
-    .row.active { box-shadow: inset 0 0 0 2px #0060df; }
-    .row .icon { width: 34px; text-align: center; font-size: 16px; background: #42414d;
-                 border: none; border-radius: 6px; color: #fff; padding: 6px 0; cursor: pointer; }
-    .row .name { flex: 1; min-width: 0; background: #42414d; border: none; border-radius: 6px;
-                 color: #fff; padding: 7px; font: inherit; }
-    .row .count { opacity: .5; font-size: 11px; min-width: 28px; text-align: right; }
-    .row .swatch { width: 20px; height: 20px; flex: none; border-radius: 50%; padding: 0;
-                   border: 2px solid #52525e; background: transparent; cursor: pointer; }
-    .row .swatch:hover:not(:disabled) { border-color: #8f8f9d; background: transparent; }
-    .row .swatch.none, .row .swatch.none:hover:not(:disabled) {
-      background: repeating-linear-gradient(45deg, #42414d 0 3px, transparent 3px 6px); }
-    .row button { background: #42414d; border: none; border-radius: 6px; color: #fff;
-                  cursor: pointer; padding: 6px 7px; font: inherit; }
-    .row button:hover:not(:disabled) { background: #52525e; }
-    .row button:disabled { opacity: .3; cursor: default; }
-    .row .del { background: #5a2a2a; }
-    .row .del:hover:not(:disabled) { background: #7a3434; }
-    .row .open { min-width: 60px; box-sizing: border-box; text-align: center; }
-    .row .open:not(:disabled) { background: #0060df; }
-    .row.active .open:disabled { background: #2a7d46; color: #fff; opacity: 1; }
-    .addbar { display: flex; gap: 6px; margin-top: 8px; }
-    .addbar .icon { width: 44px; text-align: center; cursor: pointer; }
-    .addbar input { background: #2b2a33; border: 1px solid #42414d; border-radius: 6px;
-                    color: #fff; padding: 7px; font: inherit; min-width: 0; }
-    .addbar .name { flex: 1; }
-    .addbar .go, .primary { background: #0060df; border: none; border-radius: 6px; color: #fff;
-                            cursor: pointer; padding: 7px 12px; font: inherit; }
-    .addbar .go:hover, .primary:hover { background: #0250bb; }
-    .reset { width: 100%; margin-top: 10px; background: #0060df; border: none; border-radius: 6px;
-             color: #fff; cursor: pointer; padding: 8px; font: inherit; }
-    .reset:hover { background: #0250bb; }
-    /* icon palette — centered modal overlay */
-    #paletteOverlay { position: fixed; inset: 0; z-index: 50; display: none;
-                      align-items: center; justify-content: center;
-                      background: rgba(0,0,0,.55); padding: 16px; }
-    #paletteOverlay.open { display: flex; }
-    #palette { display: flex; flex-wrap: wrap; gap: 2px;
-               width: 100%; max-width: 268px; max-height: 320px; overflow-y: auto; padding: 8px;
-               background: #34333c; border: 1px solid #52525e; border-radius: 10px;
-               box-shadow: 0 10px 30px rgba(0,0,0,.6); }
-    #palette button { width: 26px; height: 26px; font-size: 15px; background: none; border: none;
-                      border-radius: 5px; cursor: pointer; line-height: 1; }
-    #palette button:hover { background: #52525e; }
+    body { width: 360px; padding: 10px 12px 12px; }
+
+    header { display: flex; align-items: center; gap: 8px; padding: 2px 2px 9px; }
+    header img { width: 22px; height: 22px; }
+    header .title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    header .spacer { flex: 1; }
+
+    #search { width: 100%; box-sizing: border-box; margin-bottom: 12px;
+              border-radius: 999px; padding: 8px 14px; }
+
+    h2.sect { font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+              letter-spacing: .6px; color: var(--text-faint); margin: 2px 4px 7px; }
+
+    /* panel rows — click to switch */
+    #list { display: flex; flex-direction: column; gap: 8px; }
+    .prow { display: flex; align-items: center; gap: 9px; padding: 8px 8px 8px 14px;
+            border-radius: 999px;
+            border: 3px solid var(--secondary);
+            background: var(--bg);
+            cursor: pointer; user-select: none; }
+    .prow:hover { background: color-mix(in srgb, var(--secondary) 13%, var(--bg));
+                  box-shadow: inset 0 0 9px color-mix(in srgb, var(--secondary) 35%, transparent); }
+    .prow .picon { width: 28px; height: 28px; flex: none; font-size: 15px;
+                   background: transparent; border: none; border-radius: 50%;
+                   cursor: pointer; padding: 0; }
+    .prow .picon:hover { background: color-mix(in srgb, var(--secondary) 15%, transparent); }
+    .prow .pname { min-width: 0; max-width: 58%; white-space: nowrap; overflow: hidden;
+                   text-overflow: ellipsis; padding: 3px 8px; border-radius: 999px;
+                   cursor: text; outline: none; user-select: text; }
+    .prow .pname:hover { background: color-mix(in srgb, var(--secondary) 10%, transparent); }
+    .prow .pname:focus { background: var(--surface-2); }
+    .prow .pspace { flex: 1; align-self: stretch; min-width: 8px; }
+    .prow .pcount { flex: none; font-size: 11px; font-weight: 600; color: var(--text);
+                    background: color-mix(in srgb, var(--secondary) 12%, transparent);
+                    border-radius: 999px;
+                    border: 1.5px solid color-mix(in srgb, var(--secondary) 85%, transparent);
+                    padding: 1px 8px; min-width: 12px; text-align: center; }
+    .prow .swatch.mini { width: 18px; height: 18px; }
+    .prow .rowtrash { width: 26px; height: 26px; opacity: 0; color: var(--danger); }
+    .prow:hover .rowtrash { opacity: 1; }
+    .prow .rowtrash:hover { background: color-mix(in srgb, var(--danger) 15%, transparent);
+                            color: var(--danger-strong); }
+    .prow.active { background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+                   border-color: var(--accent); }
+    .prow.active:hover { background: color-mix(in srgb, var(--accent) 15%, var(--bg));
+                         box-shadow: inset 0 0 9px color-mix(in srgb, var(--accent) 30%, transparent); }
+    .prow.active .pname { font-weight: 650; }
+    .prow.active .pcount { border-color: var(--accent);
+                           background: color-mix(in srgb, var(--accent) 14%, transparent);
+                           color: var(--text); }
+    .prow.dragging { opacity: .7;
+                     background: color-mix(in srgb, var(--secondary) 16%, var(--bg));
+                     box-shadow: inset 0 0 12px color-mix(in srgb, var(--secondary) 45%, transparent); }
+    #list.reordering, #list.reordering .prow { cursor: grabbing; }
+
+    /* inline editor strip (edit panel / new panel) */
+    .editor { display: flex; align-items: center; gap: 7px; padding: 7px 8px;
+              margin: 4px 0 8px; background: var(--bg);
+              border: 3px solid var(--secondary); border-radius: 999px; }
+    .editor .icon-pick { width: 34px; height: 34px; flex: none; font-size: 15px;
+                         background: var(--surface-2); border: none;
+                         border-radius: 50%; cursor: pointer; padding: 0; }
+    .editor .icon-pick:hover { background: var(--surface-3); }
+    .editor input.name { flex: 1; min-width: 0; border: none; border-radius: 999px;
+                         background: var(--surface-2); padding: 7px 12px; }
+    .editor input.name:focus { box-shadow: none; background: var(--surface-3); }
+    .editor .add { padding: 7px 13px; }
+
+    /* ghost add row */
+    #ghostAdd { width: 100%; margin-top: 10px; padding: 9px;
+                border: 3px dashed var(--secondary);
+                border-radius: 999px;
+                background: transparent; color: var(--text-muted); cursor: pointer; }
+    #ghostAdd:hover { color: var(--text);
+                      background: color-mix(in srgb, var(--secondary) 10%, var(--bg));
+                      box-shadow: inset 0 0 9px color-mix(in srgb, var(--secondary) 30%, transparent); }
+
+    /* icon palette */
+    #palette { display: flex; flex-wrap: wrap; gap: 2px; max-height: 320px;
+               overflow-y: auto; }
+    #palette button { width: 26px; height: 26px; font-size: 15px; background: none;
+                      border: none; border-radius: 5px; cursor: pointer; line-height: 1; }
+    #palette button:hover { background: var(--surface-3); }
     #palette .pal-head { flex-basis: 100%; font-size: 10px; text-transform: uppercase;
-                         letter-spacing: .5px; opacity: .45; padding: 7px 2px 3px;
-                         border-top: 1px solid #4a4954; margin-top: 3px; }
+                         letter-spacing: .5px; color: var(--text-faint);
+                         padding: 8px 2px 3px; border-top: 1px solid var(--border);
+                         margin-top: 3px; }
     #palette .pal-head:first-child { border-top: none; margin-top: 0; padding-top: 2px; }
-    /* panel color picker — centered modal overlay */
-    #colorOverlay { position: fixed; inset: 0; z-index: 60; display: none;
-                    align-items: center; justify-content: center;
-                    background: rgba(0,0,0,.55); padding: 16px; }
-    #colorOverlay.open { display: flex; }
-    #colorBox { background: #34333c; border: 1px solid #52525e; border-radius: 10px;
-                padding: 14px; width: 100%; max-width: 232px;
-                box-shadow: 0 10px 30px rgba(0,0,0,.6); }
-    #colorBox .col-head { font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
-                          opacity: .45; margin-bottom: 10px; }
+
+    /* color picker */
+    #colorBox { max-width: 236px; padding: 14px; }
+    .col-head { font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+                color: var(--text-faint); margin-bottom: 10px; }
     #colorGrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; }
     #colorGrid button { width: 26px; height: 26px; border-radius: 50%; padding: 0;
                         border: 2px solid transparent; cursor: pointer; }
     #colorGrid button:hover { transform: scale(1.12); }
-    #colorGrid button.selected { border-color: #fff; box-shadow: 0 0 0 2px #34333c inset; }
-    #colorGrid button.none { background: repeating-linear-gradient(45deg, #52525e 0 3px, #2b2a33 3px 6px);
-                             border-color: #52525e; }
+    #colorGrid button.selected { border-color: var(--text);
+                                 box-shadow: 0 0 0 2px var(--float) inset; }
+    #colorGrid button.none { background: repeating-linear-gradient(45deg,
+                               var(--surface-3) 0 3px, transparent 3px 6px);
+                             border-color: var(--border-strong); }
     .col-custom { display: flex; align-items: center; gap: 8px; margin-top: 12px;
-                  font-size: 12px; opacity: .85; }
+                  font-size: 12px; color: var(--text-muted); }
     .col-custom input[type=color] { width: 34px; height: 24px; padding: 0; border: none;
                                     background: none; cursor: pointer; }
-    /* in-popup confirm dialog */
-    #modal { position: fixed; inset: 0; z-index: 100; display: none;
-             align-items: center; justify-content: center;
-             background: rgba(0,0,0,.55); padding: 16px; }
-    #modal.open { display: flex; }
-    #modal .box { background: #2b2a33; border: 1px solid #42414d; border-radius: 10px;
-                  padding: 16px; width: 100%; max-width: 280px;
-                  box-shadow: 0 10px 30px rgba(0,0,0,.6); }
-    #modal .msg { font-size: 13px; line-height: 1.45; margin-bottom: 14px; word-break: break-word; }
+
+    /* confirm dialog */
+    #modal .msg { font-size: 13px; line-height: 1.45; margin: 4px 2px 14px;
+                  word-break: break-word; }
     #modal .actions { display: flex; gap: 8px; justify-content: flex-end; }
-    #modal button { border: none; border-radius: 6px; color: #fff; cursor: pointer;
-                    padding: 7px 14px; font: inherit; }
-    #modal .cancel { background: #42414d; }
-    #modal .cancel:hover { background: #52525e; }
-    #modal .ok { background: #5a2a2a; }
-    #modal .ok:hover { background: #7a3434; }
-    /* cross-panel tab search */
-    #search { width: 100%; box-sizing: border-box; margin: 8px 0 4px; background: #2b2a33;
-              border: 1px solid #42414d; border-radius: 8px; color: #fff; padding: 8px 10px;
-              font: inherit; }
-    #search:focus { outline: none; border-color: #0060df; }
-    #results { display: none; flex-direction: column; gap: 4px; margin-top: 6px;
-               max-height: 360px; overflow-y: auto; }
+    #modal .ok { background: var(--danger); color: #fff; border: none;
+                 border-radius: 999px; padding: 7px 16px;
+                 cursor: pointer; font-weight: 600; }
+    #modal .ok:hover { filter: brightness(1.1); }
+
+    /* cross-panel tab search results */
+    #results { display: none; flex-direction: column; gap: 5px;
+               max-height: 380px; overflow-y: auto; }
     body.searching #results { display: flex; }
     body.searching #panels { display: none; }
-    .res { display: flex; align-items: center; gap: 8px; padding: 7px 8px; background: #2b2a33;
-           border-radius: 8px; cursor: pointer; }
-    .res:hover { background: #34333c; }
+    .res { display: flex; align-items: center; gap: 9px; padding: 7px 12px;
+           border-radius: 999px;
+           border: 3px solid var(--secondary);
+           background: var(--bg); cursor: pointer; }
+    .res:hover { background: color-mix(in srgb, var(--secondary) 13%, var(--bg));
+                 box-shadow: inset 0 0 9px color-mix(in srgb, var(--secondary) 35%, transparent); }
     .res img.fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
     .res .fav-fallback { width: 16px; text-align: center; flex: none; }
     .res .res-main { flex: 1; min-width: 0; }
     .res .res-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .res .res-url { font-size: 11px; opacity: .45; white-space: nowrap; overflow: hidden;
-                    text-overflow: ellipsis; }
-    .res .res-panel { flex: none; font-size: 11px; opacity: .7; background: #42414d;
-                      border-radius: 5px; padding: 3px 7px; max-width: 90px; white-space: nowrap;
+    .res .res-url { font-size: 11px; color: var(--text-faint); white-space: nowrap;
+                    overflow: hidden; text-overflow: ellipsis; }
+    .res .res-panel { flex: none; font-size: 11px; color: var(--text-muted);
+                      background: transparent; border-radius: 999px;
+                      border: 1.5px solid color-mix(in srgb, var(--secondary) 55%, transparent);
+                      padding: 2px 8px; max-width: 90px; white-space: nowrap;
                       overflow: hidden; text-overflow: ellipsis; }
-    #results .empty { opacity: .5; font-size: 12px; padding: 10px 4px; }
+    #results .empty { color: var(--text-faint); font-size: 12px; padding: 10px 4px; }
   </style>
 </head>
 <body>
   <header>
     <img src="icons/icon-48.png" alt="">
     <span class="title">Houdini</span>
-    <span class="by">Panels</span>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="themeBtn"></button>
+    <button class="icon-btn" id="settingsBtn" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
   </header>
 
-  <input id="search" placeholder="🔍  Search tabs across all panels…" autocomplete="off">
+  <input id="search" placeholder="Search tabs across all panels…" autocomplete="off">
   <div id="results"></div>
 
   <div id="panels">
-    <h2>Panels — click Open to switch</h2>
+    <h2 class="sect">Panels</h2>
     <div id="list"></div>
-    <div class="addbar">
-      <input class="icon" id="newIcon" value="📄" maxlength="4" title="Click to pick an icon">
-      <input class="name" id="newName" placeholder="New panel name">
-      <button class="go" id="addBtn">Add</button>
-    </div>
-
-    <button class="reset" id="manageBtn">Settings…</button>
+    <div id="newEditor"></div>
+    <button id="ghostAdd">+ New panel</button>
   </div>
 
-  <div id="paletteOverlay"><div id="palette"></div></div>
+  <div id="paletteOverlay" class="overlay"><div id="palette" class="sheet"></div></div>
 
-  <div id="colorOverlay">
-    <div id="colorBox">
+  <div id="colorOverlay" class="overlay">
+    <div id="colorBox" class="sheet">
       <div class="col-head">Panel color — tints the browser while active</div>
       <div id="colorGrid"></div>
       <label class="col-custom">Custom <input type="color" id="customColor"></label>
     </div>
   </div>
 
-  <div id="modal">
-    <div class="box">
+  <div id="modal" class="overlay">
+    <div class="sheet">
       <div class="msg" id="modalMsg"></div>
       <div class="actions">
-        <button class="cancel" id="modalCancel">Cancel</button>
+        <button class="secondary" id="modalCancel">Cancel</button>
         <button class="ok" id="modalOk">Remove</button>
       </div>
     </div>

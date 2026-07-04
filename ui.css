@@ -1,0 +1,196 @@
+/* Houdini shared UI — design tokens + common components.
+   theme.js resolves the stored mode into html[data-theme="dark"|"light"].
+   --accent defaults per theme; the popup overrides it at runtime with the
+   active panel's color (panel-adaptive accent). */
+
+:root {
+  --font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius: 10px;
+  --radius-sm: 7px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121117;
+  --surface: #211f29;
+  --surface-2: #2b2935;
+  --surface-3: #383544;
+  --float: #262430;
+  --border: rgba(244, 243, 255, 0.09);
+  --border-strong: rgba(244, 243, 255, 0.18);
+  --text: #f2f1f7;
+  --text-muted: rgba(242, 241, 247, 0.60);
+  --text-faint: rgba(242, 241, 247, 0.38);
+  --secondary: #ff4fdf;
+  --accent: #ff4fdf;
+  --on-accent: #15141a;
+  --danger: #dd2430;
+  --danger-strong: #b51823;
+  --ok: #7bc88a;
+  --warn: #f0c674;
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 3px 12px rgba(0, 0, 0, 0.18);
+  --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f1f2f4;
+  --surface: #ffffff;
+  --surface-2: #eeeff2;
+  --surface-3: #e3e4e8;
+  --float: #ffffff;
+  --border: rgba(21, 20, 26, 0.10);
+  --border-strong: rgba(21, 20, 26, 0.20);
+  --text: #1b1a21;
+  --text-muted: rgba(27, 26, 33, 0.62);
+  --text-faint: rgba(27, 26, 33, 0.40);
+  --secondary: #6b1f9e;
+  --accent: #6b1f9e;
+  --on-accent: #ffffff;
+  --danger: #dd2430;
+  --danger-strong: #b51823;
+  --ok: #35803f;
+  --warn: #966b00;
+  --backdrop: rgba(23, 22, 29, 0.30);
+  --shadow: 0 1px 2px rgba(21, 20, 26, 0.06), 0 3px 12px rgba(21, 20, 26, 0.06);
+  --shadow-float: 0 12px 40px rgba(21, 20, 26, 0.22);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--font);
+}
+
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 1px;
+}
+
+/* --- Buttons --------------------------------------------------------------
+   Same outline language as the popup rows: strong secondary strokes, pill
+   shapes, fills reserved for the primary action. Hover glows stay inset. */
+
+button { font: inherit; }
+
+.primary {
+  background: var(--accent); color: var(--on-accent);
+  border: none; border-radius: 999px;
+  padding: 8px 16px; cursor: pointer; font-weight: 600;
+}
+.primary:hover { filter: brightness(1.12); }
+
+.secondary {
+  background: transparent; color: var(--text);
+  border: 2px solid color-mix(in srgb, var(--secondary) 60%, transparent);
+  border-radius: 999px;
+  padding: 6px 14px; cursor: pointer;
+}
+.secondary:hover {
+  border-color: var(--secondary);
+  background: color-mix(in srgb, var(--secondary) 12%, transparent);
+}
+
+.danger, .reset {
+  background: transparent; color: var(--danger-strong);
+  border: 2px solid color-mix(in srgb, var(--danger) 60%, transparent);
+  border-radius: 999px;
+  padding: 6px 14px; cursor: pointer; font-weight: 600;
+}
+.danger:hover, .reset:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.icon-btn {
+  width: 30px; height: 30px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 50%;
+  color: var(--text-muted); cursor: pointer; padding: 0;
+}
+.icon-btn:hover {
+  background: color-mix(in srgb, var(--secondary) 15%, transparent);
+  color: var(--text);
+}
+.icon-btn svg { width: 16px; height: 16px; }
+
+/* --- Inputs ---------------------------------------------------------------- */
+
+input[type="text"], input[type="number"], input:not([type]), textarea {
+  background: var(--bg);
+  border: 2px solid color-mix(in srgb, var(--secondary) 55%, transparent);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 7px 10px;
+  font: inherit;
+}
+input::placeholder, textarea::placeholder { color: var(--text-faint); }
+input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--secondary);
+  box-shadow: inset 0 0 8px color-mix(in srgb, var(--secondary) 22%, transparent);
+}
+
+/* --- Cards & status text ----------------------------------------------------- */
+
+.card {
+  background: var(--bg);
+  border: 3px solid var(--secondary);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.ok { color: var(--ok); }
+.err { color: var(--danger-strong); }
+
+/* --- Segmented control ------------------------------------------------------- */
+
+.seg {
+  display: inline-flex; gap: 3px; padding: 3px;
+  background: transparent;
+  border: 2px solid color-mix(in srgb, var(--secondary) 60%, transparent);
+  border-radius: 999px;
+}
+.seg button {
+  border: none; background: transparent; color: var(--text-muted);
+  padding: 6px 16px; border-radius: 999px; cursor: pointer; font-size: 12px;
+}
+.seg button:hover { color: var(--text);
+  background: color-mix(in srgb, var(--secondary) 12%, transparent); }
+.seg button.selected {
+  background: var(--accent); color: var(--on-accent); font-weight: 600;
+}
+
+/* --- Overlays (palettes, dialogs) --------------------------------------------- */
+
+.overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: none; align-items: center; justify-content: center;
+  background: var(--backdrop); padding: 16px;
+}
+.overlay.open { display: flex; }
+
+.sheet {
+  background: var(--bg);
+  border: 3px solid var(--secondary);
+  border-radius: 18px;
+  box-shadow: var(--shadow-float);
+  padding: 12px;
+  width: 100%; max-width: 272px;
+  box-sizing: border-box;
+}
+
+/* --- Color swatch (round, hatched when empty) ---------------------------------- */
+
+.swatch {
+  width: 22px; height: 22px; flex: none; border-radius: 50%; padding: 0;
+  border: 2px solid var(--border-strong); background: transparent; cursor: pointer;
+}
+.swatch:hover { border-color: var(--text-faint); }
+.swatch.none, .swatch.none:hover {
+  background: repeating-linear-gradient(45deg, var(--surface-3) 0 3px, transparent 3px 6px);
+}
