@@ -354,7 +354,7 @@ async function takeSnapshot() {
   let snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
   snapshots.push(snapshot);
   if (snapshots.length > maxSnapshots) snapshots = snapshots.slice(snapshots.length - maxSnapshots);
-  await browser.storage.local.set({ snapshots });
+  await browser.storage.local.set({ snapshots, lastSnapshotTime: snapshot.timestamp });
   return { ok: true, snapshot };
 }
 
@@ -480,25 +480,43 @@ async function updateSnapshotSettings(period, maxSnapshots) {
   await resetSnapshotAlarm();
 }
 
-// Only creates the alarm if it doesn't already exist.
-// Preserves Firefox's "fire missed alarm on next launch" behavior.
-async function initSnapshotAlarm() {
-  const existing = await browser.alarms.get(ALARM_NAME);
-  if (!existing) {
-    const { period } = await getSnapshotSettings();
-    browser.alarms.create(ALARM_NAME, { periodInMinutes: period * 60 });
-  }
+// A single long alarm is unreliable for periods like 24h: alarms die on
+// browser restart and their countdown pauses during OS suspend. Instead a
+// short heartbeat alarm ticks and the wall clock decides: snapshot when
+// Date.now() - lastSnapshotTime exceeds the period.
+const HEARTBEAT_MINUTES = 15;
+
+async function checkSnapshotDue() {
+  const { period } = await getSnapshotSettings();
+  const { lastSnapshotTime } = await browser.storage.local.get('lastSnapshotTime');
+  const elapsed = Date.now() - (lastSnapshotTime ?? 0);
+  if (elapsed >= period * 60 * 60 * 1000) await takeSnapshot();
 }
 
-// Called when settings change: clears and recreates with new period.
+function scheduleSnapshotAlarm() {
+  // First tick after 1 minute so session restore settles before an
+  // overdue snapshot is captured.
+  browser.alarms.create(ALARM_NAME, { delayInMinutes: 1, periodInMinutes: HEARTBEAT_MINUTES });
+}
+
+// Only creates the alarm if it doesn't already exist: the background page
+// restarts whenever an alarm wakes it, and recreating the alarm on every
+// wake would reset the tick cycle each time.
+async function initSnapshotAlarm() {
+  const existing = await browser.alarms.get(ALARM_NAME);
+  if (!existing) scheduleSnapshotAlarm();
+}
+
+// Called when settings change. The heartbeat itself doesn't depend on the
+// period (checkSnapshotDue reads it live), but a fresh tick makes a
+// shortened period take effect within a minute instead of a full heartbeat.
 async function resetSnapshotAlarm() {
   await browser.alarms.clear(ALARM_NAME);
-  const { period } = await getSnapshotSettings();
-  browser.alarms.create(ALARM_NAME, { periodInMinutes: period * 60 });
+  scheduleSnapshotAlarm();
 }
 
 browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM_NAME) takeSnapshot();
+  if (alarm.name === ALARM_NAME) checkSnapshotDue();
 });
 
 // --- Keyboard shortcuts ---------------------------------------------------
