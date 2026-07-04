@@ -28,6 +28,7 @@ Hidden tabs aren't closed — they keep their state and reappear the moment you 
 | Feature | What it gives you |
 | --- | --- |
 | **Panels** | Group tabs into named, icon-tagged panels. Switch to focus one; the rest hide. |
+| **Panel colors** | Give a panel a color and the whole browser chrome (tab bar, toolbar, URL bar, sidebar, menus) tints to match while it's active. |
 | **Toolbar popup** | Add, rename, reorder, remove and switch panels from one click. |
 | **Cross-panel search** | Find a tab in _any_ panel by title or URL; jump to it and Houdini switches panels for you. |
 | **Keyboard shortcuts** | Cycle or jump to panels from the keyboard; remap keys in Settings. |

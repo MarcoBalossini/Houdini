@@ -87,6 +87,69 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && paletteOverlay.classList.contains('open')) hidePalette();
 });
 
+// --- Panel color picker ----------------------------------------------------
+// Preset swatches + a native custom picker. Picking a color re-themes the
+// whole browser while that panel is active; "none" keeps the user's theme.
+
+// Muted mid-tones: saturated enough to read as a color across the whole
+// chrome, soft enough not to shout. Custom picker covers the vivid end.
+const PANEL_COLORS = [
+  '#b05a5a', '#bd7550', '#c39a55', '#a5a05c', '#6f9e63', '#57a08c',
+  '#5b96ad', '#5c7fb5', '#6f6cb0', '#9069b0', '#b069a1', '#c1738a',
+  '#a07a5f', '#75839b', '#87878f', '#5c5f6a', '#404a5c'
+];
+
+const colorOverlay = document.getElementById('colorOverlay');
+const colorGrid = document.getElementById('colorGrid');
+const customColor = document.getElementById('customColor');
+let colorPickCb = null; // receives hex string, or null for "no color"
+
+{
+  const none = document.createElement('button');
+  none.className = 'none';
+  none.dataset.color = '';
+  none.title = 'No color — keep your browser theme';
+  colorGrid.appendChild(none);
+  for (const c of PANEL_COLORS) {
+    const b = document.createElement('button');
+    b.dataset.color = c;
+    b.style.background = c;
+    b.title = c;
+    colorGrid.appendChild(b);
+  }
+}
+
+colorGrid.addEventListener('mousedown', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  e.preventDefault();
+  if (colorPickCb) colorPickCb(btn.dataset.color || null);
+  hideColorPicker();
+});
+
+customColor.addEventListener('change', () => {
+  if (colorPickCb) colorPickCb(customColor.value);
+  hideColorPicker();
+});
+
+function openColorPicker(current, cb) {
+  colorPickCb = cb;
+  customColor.value = current || '#5c7fb5';
+  for (const b of colorGrid.querySelectorAll('button'))
+    b.classList.toggle('selected', (b.dataset.color || '') === (current || ''));
+  colorOverlay.classList.add('open');
+}
+function hideColorPicker() {
+  colorOverlay.classList.remove('open');
+  colorPickCb = null;
+}
+colorOverlay.addEventListener('mousedown', (e) => {
+  if (e.target === colorOverlay) hideColorPicker();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && colorOverlay.classList.contains('open')) hideColorPicker();
+});
+
 async function render() {
   const { panels, activePanel, counts } = await send({ cmd: 'getState' });
   const list = document.getElementById('list');
@@ -108,10 +171,27 @@ async function render() {
     name.className = 'name';
     name.value = p.name;
 
-    const commit = () => send({ cmd: 'update', id: p.id, name: name.value, icon: icon.value });
+    // Panel color: closure state, committed as '' when cleared.
+    let color = p.color || null;
+    const swatch = document.createElement('button');
+    swatch.className = 'swatch' + (color ? '' : ' none');
+    if (color) swatch.style.background = color;
+    swatch.title = 'Panel color — tints the browser while this panel is active';
+
+    const commit = () => send({ cmd: 'update', id: p.id, name: name.value, icon: icon.value, color: color || '' });
     icon.addEventListener('change', commit);
     name.addEventListener('change', commit);
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter') name.blur(); });
+
+    swatch.addEventListener('click', () => openColorPicker(color, (c) => {
+      color = c;
+      swatch.classList.toggle('none', !c);
+      swatch.style.background = c || '';
+      commit();
+    }));
+
+    // Colored panel? Its active ring matches the panel color.
+    if (p.id === activePanel && p.color) row.style.boxShadow = `inset 0 0 0 2px ${p.color}`;
 
     const count = document.createElement('span');
     count.className = 'count';
@@ -128,7 +208,7 @@ async function render() {
         send({ cmd: 'remove', id: p.id });
     });
 
-    row.append(icon, name, count, up, down, open, del);
+    row.append(icon, name, swatch, count, up, down, open, del);
     list.appendChild(row);
   });
 }

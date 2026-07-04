@@ -34,6 +34,101 @@ async function savePanels(panels) {
   rebuildTabMenu(); // panel list changed -> refresh the right-click menu
 }
 
+// --- Panel color theming ----------------------------------------------------
+// A panel may carry an optional `color` (hex string). While that panel is
+// active the whole browser chrome (tab bar, toolbar, URL bar, sidebar, popups,
+// new tab page) is tinted with shades derived from it via browser.theme.update.
+// Panels without a color restore the user's own theme.
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex(rgb) {
+  return '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+}
+
+// Blend rgb toward target by t (0..1).
+function mixRgb(rgb, target, t) {
+  return rgb.map((v, i) => v + (target[i] - v) * t);
+}
+
+// WCAG relative luminance, for picking readable text.
+function relLuminance([r, g, b]) {
+  const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+function textOn(rgb) {
+  return relLuminance(rgb) > 0.4 ? '#15141a' : '#fbfbfe';
+}
+
+const BLACK = [0, 0, 0];
+const WHITE = [255, 255, 255];
+
+// Derive a full Firefox theme from one base color.
+function buildTheme(baseHex) {
+  const base = hexToRgb(baseHex);
+  if (!base) return null;
+  const frame = mixRgb(base, BLACK, 0.30);   // tab strip
+  const toolbar = base;                       // nav bar + selected tab
+  const field = mixRgb(base, BLACK, 0.45);   // URL/search bar
+  const fieldFocus = mixRgb(base, BLACK, 0.55);
+  const sidebar = mixRgb(base, BLACK, 0.15);
+  const popup = mixRgb(base, BLACK, 0.35);   // menus, dropdowns
+  const highlight = mixRgb(base, WHITE, 0.22);
+  const ntp = mixRgb(base, BLACK, 0.55);     // new tab page
+  return {
+    colors: {
+      frame: rgbToHex(frame),
+      frame_inactive: rgbToHex(mixRgb(frame, BLACK, 0.2)),
+      tab_background_text: textOn(frame),
+      tab_selected: rgbToHex(toolbar),
+      tab_text: textOn(toolbar),
+      tab_line: rgbToHex(highlight),
+      toolbar: rgbToHex(toolbar),
+      toolbar_text: textOn(toolbar),
+      bookmark_text: textOn(toolbar),
+      icons: textOn(toolbar),
+      toolbar_field: rgbToHex(field),
+      toolbar_field_text: textOn(field),
+      toolbar_field_border: 'transparent',
+      toolbar_field_focus: rgbToHex(fieldFocus),
+      toolbar_field_text_focus: textOn(fieldFocus),
+      toolbar_field_highlight: rgbToHex(highlight),
+      toolbar_field_highlight_text: textOn(highlight),
+      sidebar: rgbToHex(sidebar),
+      sidebar_text: textOn(sidebar),
+      sidebar_border: rgbToHex(mixRgb(sidebar, BLACK, 0.3)),
+      sidebar_highlight: rgbToHex(highlight),
+      sidebar_highlight_text: textOn(highlight),
+      popup: rgbToHex(popup),
+      popup_text: textOn(popup),
+      popup_border: rgbToHex(mixRgb(popup, WHITE, 0.15)),
+      popup_highlight: rgbToHex(highlight),
+      popup_highlight_text: textOn(highlight),
+      ntp_background: rgbToHex(ntp),
+      ntp_text: textOn(ntp)
+    }
+  };
+}
+
+// Apply (or clear) the browser theme for a panel. Applied to every window:
+// the active panel is global, so the chrome color follows it everywhere.
+async function applyPanelTheme(panelId) {
+  if (!browser.theme || !browser.theme.update) return;
+  const { panels } = await getPanels();
+  const panel = panels.find(p => p.id === panelId);
+  const theme = panel && panel.color ? buildTheme(panel.color) : null;
+  try {
+    if (theme) await browser.theme.update(theme);
+    else await browser.theme.reset(); // back to the user's own theme
+  } catch {}
+}
+
 // Count how many tabs are tagged to each panel (current window).
 async function panelTabCounts() {
   const tabs = await browser.tabs.query({ currentWindow: true });
@@ -76,6 +171,7 @@ async function switchPanel(targetPanel) {
   }
 
   await browser.storage.local.set({ activePanel: targetPanel });
+  applyPanelTheme(targetPanel); // tint the chrome; independent of tab shuffling
 
   const tabsToShow = [];
   const tabsToHide = [];
@@ -143,22 +239,29 @@ async function switchPanel(targetPanel) {
   notifyChanged();
 }
 
-async function addPanel(name, icon) {
+async function addPanel(name, icon, color) {
   const { panels } = await getPanels();
   const panel = { id: uid(), name: name || 'Panel', icon: icon || '📄' };
+  if (color) panel.color = color;
   panels.push(panel);
   await savePanels(panels);
   await switchPanel(panel.id); // switches + auto-creates new tab in empty panel
   return panel;
 }
 
-async function updatePanel(id, name, icon) {
-  const { panels } = await getPanels();
+// color: undefined = leave as is, ''/null (when passed) = clear, hex = set.
+async function updatePanel(id, name, icon, color) {
+  const { panels, activePanel } = await getPanels();
   const panel = panels.find(p => p.id === id);
   if (!panel) return;
   if (name != null) panel.name = name;
   if (icon != null) panel.icon = icon;
+  if (color !== undefined) {
+    if (color) panel.color = color;
+    else delete panel.color;
+  }
   await savePanels(panels);
+  if (color !== undefined && id === activePanel) applyPanelTheme(id);
   notifyChanged();
 }
 
@@ -205,6 +308,7 @@ async function migrateFromSidebery(backup) {
   const sbToHoudini = {}; // Sidebery panelId -> new Houdini panel id
   for (const sp of sideberyPanels) {
     const panel = { id: uid(), name: sp.name || 'Panel', icon: sp.icon || '📄' };
+    if (sp.color) panel.color = sp.color;
     newPanels.push(panel);
     if (sp.sideberyId) sbToHoudini[sp.sideberyId] = panel.id;
   }
@@ -308,9 +412,19 @@ function extractSideberyPanels(backup) {
     if (!isTabsPanel(p.type)) continue;
     const name = p.name || p.title || p.id;
     const icon = sideberyIcon(p);
-    out.push({ sideberyId: p.id, name, icon });
+    out.push({ sideberyId: p.id, name, icon, color: sideberyColor(p) });
   }
   return out;
+}
+
+// Sidebery colors panels with Firefox container color names; map to hex.
+function sideberyColor(p) {
+  const map = {
+    blue: '#37adff', turquoise: '#00c79a', green: '#51cd00',
+    yellow: '#ffcb00', orange: '#ff9f00', red: '#ff613d',
+    pink: '#ff4bda', purple: '#af51f5'
+  };
+  return (p.color && map[p.color]) || null;
 }
 
 function isTabsPanel(type) {
@@ -854,8 +968,8 @@ browser.runtime.onMessage.addListener(async (msg) => {
       return state;
     }
     case 'switch':       return switchPanel(msg.panelId);
-    case 'add':          return addPanel(msg.name, msg.icon);
-    case 'update':       return updatePanel(msg.id, msg.name, msg.icon);
+    case 'add':          return addPanel(msg.name, msg.icon, msg.color);
+    case 'update':       return updatePanel(msg.id, msg.name, msg.icon, msg.color);
     case 'remove':       return removePanel(msg.id);
     case 'reorder':      return reorderPanels(msg.order);
     case 'migrate':      return migrateFromSidebery(msg.backup);
@@ -970,7 +1084,9 @@ async function reconcilePins() {
   }
 }
 
-getPanels(); // ensure defaults exist on load
+// Ensure defaults exist on load, then re-apply the active panel's tint (a
+// browser restart clears theme.update styling).
+getPanels().then(({ activePanel }) => applyPanelTheme(activePanel));
 initSnapshotAlarm();
 rebuildTabMenu();
 reconcilePins();
