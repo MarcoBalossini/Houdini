@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Houdini",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Houdini brings Opera GX tab workspaces straight into Firefox's own sidebar. Pick a panel and every tab that doesn't belong disappears. Houdini would approve 🎩",
   "permissions": [
     "tabs",
