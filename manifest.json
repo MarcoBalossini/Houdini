@@ -11,7 +11,9 @@
     "alarms",
     "menus",
     "tabGroups",
-    "theme"
+    "theme",
+    "contextualIdentities",
+    "cookies"
   ],
   "browser_specific_settings": {
     "gecko": {

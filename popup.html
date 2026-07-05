@@ -111,6 +111,28 @@
     .col-custom input[type=color] { width: 34px; height: 24px; padding: 0; border: none;
                                     background: none; cursor: pointer; }
 
+    /* container swatch — square + the container's own Firefox icon, to read as
+       distinct from the round, plain-color-only swatch sitting right next to it. */
+    .swatch.sq { border-radius: 7px; display: flex; align-items: center; justify-content: center;
+                 font-size: 11px; font-weight: 700; line-height: 1; color: var(--text-faint); }
+    .swatch.sq img { width: 90%; height: 90%; flex: none; }
+
+    /* container picker */
+    #containerBox { max-width: 260px; padding: 14px; }
+    #containerList { display: flex; flex-direction: column; gap: 3px;
+                     max-height: 280px; overflow-y: auto; }
+    .cont-row { display: flex; align-items: center; gap: 9px; width: 100%;
+                box-sizing: border-box; padding: 7px 10px; border-radius: 999px;
+                border: none; background: transparent; color: var(--text);
+                font-size: 13px; text-align: left; cursor: pointer; }
+    .cont-row:hover { background: color-mix(in srgb, var(--secondary) 12%, transparent); }
+    .cont-row.selected { background: color-mix(in srgb, var(--accent) 14%, transparent);
+                         font-weight: 600; }
+    .cont-dot { width: 18px; height: 18px; border-radius: 50%; flex: none;
+                display: flex; align-items: center; justify-content: center; }
+    .cont-icon { width: 65%; height: 65%; }
+    .cont-empty { color: var(--text-faint); font-size: 12px; padding: 8px 6px; }
+
     /* confirm dialog */
     #modal .msg { font-size: 13px; line-height: 1.45; margin: 4px 2px 14px;
                   word-break: break-word; }
@@ -177,6 +199,13 @@
       <div class="col-head">Panel color — tints the browser while active</div>
       <div id="colorGrid"></div>
       <label class="col-custom">Custom <input type="color" id="customColor"></label>
+    </div>
+  </div>
+
+  <div id="containerOverlay" class="overlay">
+    <div id="containerBox" class="sheet">
+      <div class="col-head">Container — new tabs in this panel open here</div>
+      <div id="containerList"></div>
     </div>
   </div>
 

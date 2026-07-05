@@ -211,6 +211,94 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && colorOverlay.classList.contains('open')) hideColorPicker();
 });
 
+// ---------- panel container picker -------------------------------------------
+
+let CONTAINERS = [];
+let CONTAINERS_SUPPORTED = false;
+
+async function loadContainers() {
+  const res = await send({ cmd: 'listContainers' });
+  CONTAINERS_SUPPORTED = !!(res && res.supported);
+  CONTAINERS = (res && res.containers) || [];
+}
+
+const containerOverlay = document.getElementById('containerOverlay');
+const containerListEl = document.getElementById('containerList');
+let containerPickCb = null; // receives a cookieStoreId, or '' for "no container"
+
+function renderContainerList(current) {
+  containerListEl.innerHTML = '';
+
+  const none = document.createElement('button');
+  none.className = 'cont-row' + (!current ? ' selected' : '');
+  none.textContent = 'None — default container';
+  none.addEventListener('click', () => {
+    if (containerPickCb) containerPickCb('');
+    hideContainerPicker();
+  });
+  containerListEl.appendChild(none);
+
+  for (const c of CONTAINERS) {
+    const row = document.createElement('button');
+    row.className = 'cont-row' + (current === c.cookieStoreId ? ' selected' : '');
+    const dot = document.createElement('span');
+    dot.className = 'cont-dot';
+    dot.style.background = c.colorCode || '';
+    const icon = document.createElement('img');
+    icon.className = 'cont-icon';
+    icon.src = c.iconUrl;
+    icon.alt = '';
+    dot.appendChild(icon);
+    row.append(dot, document.createTextNode(c.name));
+    row.addEventListener('click', () => {
+      if (containerPickCb) containerPickCb(c.cookieStoreId);
+      hideContainerPicker();
+    });
+    containerListEl.appendChild(row);
+  }
+
+  if (CONTAINERS.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'cont-empty';
+    empty.textContent = CONTAINERS_SUPPORTED
+      ? 'No containers yet — create one in Firefox\'s container settings.'
+      : 'Containers aren\'t available in this browser.';
+    containerListEl.appendChild(empty);
+  }
+}
+
+// Paint a container swatch button (the new-panel editor's or a row's): shows
+// the container's own Firefox icon on its color, or the bare "none" hatch
+// (via the .none class) when unset.
+function paintContainerSwatch(el, container) {
+  el.classList.toggle('none', !container);
+  el.style.background = container ? container.colorCode : '';
+  el.style.color = container ? textOn(container.colorCode) : '';
+  el.textContent = '';
+  if (container) {
+    const img = document.createElement('img');
+    img.src = container.iconUrl;
+    img.alt = '';
+    el.appendChild(img);
+  }
+}
+
+function openContainerPicker(current, cb) {
+  containerPickCb = cb;
+  renderContainerList(current || '');
+  containerOverlay.classList.add('open');
+}
+function hideContainerPicker() {
+  containerOverlay.classList.remove('open');
+  containerPickCb = null;
+}
+containerOverlay.addEventListener('mousedown', (e) => {
+  if (e.target === containerOverlay) hideContainerPicker();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && containerOverlay.classList.contains('open')) hideContainerPicker();
+});
+
 // ---------- panel list ---------------------------------------------------------
 
 const SVG_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
@@ -228,6 +316,7 @@ function buildEditor() {
   ed.className = 'editor';
   let icon = '📄';
   let color = null;
+  let containerId = '';
 
   const iconBtn = document.createElement('button');
   iconBtn.className = 'icon-pick';
@@ -256,6 +345,19 @@ function buildEditor() {
     paintSwatch();
   }));
 
+  const contBtn = document.createElement('button');
+  contBtn.className = 'swatch sq';
+  const paintCont = () => {
+    const c = CONTAINERS.find(x => x.cookieStoreId === containerId);
+    paintContainerSwatch(contBtn, c);
+  };
+  paintCont();
+  contBtn.title = 'Container — new tabs in this panel open here';
+  contBtn.addEventListener('click', () => openContainerPicker(containerId, (id) => {
+    containerId = id;
+    paintCont();
+  }));
+
   const addBtn = document.createElement('button');
   addBtn.className = 'primary add';
   addBtn.textContent = 'Add';
@@ -263,7 +365,7 @@ function buildEditor() {
     const n = name.value.trim();
     if (!n) { name.focus(); return; }
     editingId = null;
-    send({ cmd: 'add', name: n, icon, color: color || '' });
+    send({ cmd: 'add', name: n, icon, color: color || '', containerId: containerId || '' });
   };
   addBtn.addEventListener('click', doAdd);
   name.addEventListener('keydown', (e) => {
@@ -272,6 +374,7 @@ function buildEditor() {
   });
 
   ed.append(iconBtn, name, swatch, addBtn);
+  if (CONTAINERS_SUPPORTED) ed.insertBefore(contBtn, addBtn);
   return ed;
 }
 
@@ -339,6 +442,18 @@ async function render() {
       openColorPicker(p.color || null, (c) => send({ cmd: 'update', id: p.id, color: c || '' }));
     });
 
+    const contSwatch = document.createElement('button');
+    contSwatch.className = 'swatch sq mini';
+    const contCur = CONTAINERS.find(x => x.cookieStoreId === p.containerId);
+    paintContainerSwatch(contSwatch, contCur);
+    contSwatch.title = contCur
+      ? `Container: ${contCur.name} — new tabs in this panel open here`
+      : 'No container — click to link one';
+    contSwatch.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openContainerPicker(p.containerId || '', (id) => send({ cmd: 'update', id: p.id, containerId: id || '' }));
+    });
+
     const trash = document.createElement('button');
     trash.className = 'icon-btn rowtrash';
     trash.innerHTML = SVG_TRASH;
@@ -349,7 +464,9 @@ async function render() {
         send({ cmd: 'remove', id: p.id });
     });
 
-    row.append(iconBtn, nameEl, spacer, count, swatch, trash);
+    row.append(iconBtn, nameEl, spacer, count, swatch);
+    if (CONTAINERS_SUPPORTED) row.append(contSwatch);
+    row.append(trash);
 
     row.addEventListener('click', () => {
       if (suppressClick) { suppressClick = false; return; }
@@ -533,4 +650,4 @@ browser.runtime.onMessage.addListener((msg) => {
   }
 });
 
-render();
+loadContainers().then(render);

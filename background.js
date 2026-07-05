@@ -9,6 +9,12 @@ const DEFAULT_PANELS = [
 // preventing the race where switchPanel adopts an untagged mid-flight tab.
 let activePanelCache = null;
 
+// In-memory cache of the panel list, kept alongside activePanelCache so
+// container lookups (containerForPanel, called on every tab creation) don't
+// need a storage round-trip that would also re-read (and so re-clobber)
+// activePanelCache mid-transition.
+let panelsCache = null;
+
 function uid() {
   return 'p_' + Math.random().toString(36).slice(2, 10);
 }
@@ -26,11 +32,13 @@ async function getPanels() {
     await browser.storage.local.set({ activePanel });
   }
   activePanelCache = activePanel;
+  panelsCache = panels;
   return { panels, activePanel };
 }
 
 async function savePanels(panels) {
   await browser.storage.local.set({ panels });
+  panelsCache = panels;
   rebuildTabMenu(); // panel list changed -> refresh the right-click menu
 }
 
@@ -129,6 +137,233 @@ async function applyPanelTheme(panelId) {
   } catch {}
 }
 
+// --- Containers (Firefox contextual identities) -----------------------------
+// A panel may carry an optional `containerId` (a cookieStoreId). New tabs
+// opened while that panel is active are steered into that container: explicit
+// tabs.create() calls below pass it directly, and onCreated (further down)
+// catches organically-opened tabs (Ctrl+T, links, ...) and reopens them in
+// the right container when they didn't land there on their own.
+
+function containersSupported() {
+  return !!browser.contextualIdentities;
+}
+
+async function listContainers() {
+  if (!containersSupported()) return [];
+  try { return await browser.contextualIdentities.query({}); }
+  catch { return []; }
+}
+
+// The cookieStoreId a new tab should open in for this panel, or undefined
+// (meaning: use whatever container Firefox would pick by default). Verified
+// against the live container list so a deleted-in-Firefox container can't
+// make tabs.create() throw everywhere this is used.
+async function containerForPanel(panelId) {
+  if (!containersSupported()) return undefined;
+  // Prefer the in-memory list: this runs on every tab creation, and a full
+  // getPanels() call would re-read storage and re-clobber activePanelCache
+  // (see the comment above it) during switchPanel's brief write-then-cache
+  // window. Falls back to a real read only if nothing's cached yet (startup).
+  const panels = panelsCache || (await getPanels()).panels;
+  const panel = panels.find(p => p.id === panelId);
+  const id = panel && panel.containerId;
+  if (!id) return undefined;
+  const live = await listContainers();
+  return live.some(c => c.cookieStoreId === id) ? id : undefined;
+}
+
+// Skip container reassignment for the first few seconds after the background
+// page loads: Firefox's own session restore fires onCreated for every
+// restored tab, and thrashing all of them through close+reopen on every
+// browser start (before the user has even looked at anything) isn't worth it.
+const STARTUP_GRACE_MS = 4000;
+const startupDeadline = Date.now() + STARTUP_GRACE_MS;
+function isStartupSettling() { return Date.now() < startupDeadline; }
+
+// Tabs Houdini itself just created for a specific (possibly non-active)
+// panel — via createTabForPanel below, or moveTabToContainer's bulk re-link.
+// The generic onCreated listener must not re-tag these to whatever panel
+// happens to be active right now; the creator already tagged them correctly.
+const selfTaggedTabs = new Set();
+function markSelfTagged(tabId) {
+  selfTaggedTabs.add(tabId);
+  setTimeout(() => selfTaggedTabs.delete(tabId), 15000); // onCreated fires almost immediately; just don't leak
+}
+
+// Create a tab explicitly for `panelId`, which may not be the active panel
+// (e.g. a snapshot restore or "move to panel" reopening tabs in the
+// background). Steers it into that panel's container and tags it, without
+// racing onCreated's generic active-panel tagging.
+async function createTabForPanel(panelId, opts) {
+  const cookieStoreId = await containerForPanel(panelId);
+  const t = await browser.tabs.create({ ...opts, ...(cookieStoreId ? { cookieStoreId } : {}) });
+  markSelfTagged(t.id);
+  await browser.sessions.setTabValue(t.id, 'panel', panelId);
+  return t;
+}
+
+// Only reopen tabs whose URL can safely move containers. Privileged pages
+// (about:, moz-extension:, etc.) can't carry a container swap, aside from a
+// bare new-tab page.
+function isReassignableUrl(url) {
+  if (!url || url === 'about:blank' || url === 'about:newtab') return true;
+  return /^(https?|ftp):\/\//i.test(url);
+}
+
+// Firefox tabs.Tab has no Chrome-style `pendingUrl` — a tab opened via a link
+// or window.open() commonly starts as about:blank and only gets its real
+// destination a beat later via onUpdated. Wait briefly for that so a
+// container-swap doesn't strand the navigation on a blank tab.
+function awaitRealUrl(tabId, currentUrl) {
+  if (currentUrl && currentUrl !== 'about:blank') return Promise.resolve(currentUrl);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (url) => {
+      if (done) return;
+      done = true;
+      browser.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      resolve(url);
+    };
+    const listener = (id, changeInfo) => {
+      if (id === tabId && changeInfo.url) finish(changeInfo.url);
+    };
+    browser.tabs.onUpdated.addListener(listener);
+    const timer = setTimeout(() => finish(currentUrl), 800);
+  });
+}
+
+// A freshly (organically) created tab didn't land in its panel's linked
+// container: close it and recreate it there, preserving URL/position/active
+// state. Returns the replacement tab, or null if reassignment wasn't
+// possible. The replacement deliberately isn't self-tagged — it re-fires
+// onCreated, which tags + groups it via the normal active-panel path below.
+async function reassignContainer(tab, cookieStoreId) {
+  const url = await awaitRealUrl(tab.id, tab.url);
+  if (!isReassignableUrl(url)) return null;
+
+  // The wait above can take up to 800ms; re-check the tab still exists and
+  // grab its current index/active state rather than the stale event-time one.
+  let fresh;
+  try { fresh = await browser.tabs.get(tab.id); } catch { return null; }
+  if (fresh.cookieStoreId === cookieStoreId) return null; // already fixed or moved on
+
+  const opts = { cookieStoreId, active: fresh.active, index: fresh.index, windowId: fresh.windowId };
+  if (fresh.openerTabId != null) opts.openerTabId = fresh.openerTabId;
+  if (url && url !== 'about:blank' && url !== 'about:newtab') opts.url = url;
+
+  let created;
+  try { created = await browser.tabs.create(opts); }
+  catch {
+    delete opts.openerTabId; // opener may be gone or in another window
+    try { created = await browser.tabs.create(opts); } catch { return null; }
+  }
+  try { await browser.tabs.remove(tab.id); } catch {}
+  return created;
+}
+
+// Recreate one existing tab inside a different container, carrying over the
+// state reassignContainer doesn't need to (it only ever runs on brand-new
+// tabs): pinned/per-panel-pin, native group membership, saved-group metadata
+// for tabs currently hidden, and the panel tag itself (a new tab id needs it
+// re-set). Returns the replacement tab, or null if the move wasn't possible.
+async function moveTabToContainer(tab, cookieStoreId) {
+  // Private-browsing tabs are always cookieStoreId 'firefox-private' and
+  // can't be moved into an arbitrary container; tabs.create() would just throw.
+  if (tab.incognito) return null;
+  const url = tab.url; // an existing tab always has its real url, unlike a brand-new one
+  if (!isReassignableUrl(url)) return null;
+
+  const [panelId, panelPinnedRaw, savedGroup] = await Promise.all([
+    browser.sessions.getTabValue(tab.id, 'panel'),
+    browser.sessions.getTabValue(tab.id, 'panelPinned'),
+    browser.sessions.getTabValue(tab.id, 'savedGroup')
+  ]);
+  const panelPinned = panelPinnedRaw === true;
+  const groupId = (tab.groupId != null && tab.groupId !== -1) ? tab.groupId : null;
+
+  // Create unpinned first: a pinned tab can't take an arbitrary index or join
+  // a group, so pin (and let Firefox reposition it) after those are set.
+  const opts = { cookieStoreId, active: tab.active, index: tab.index, windowId: tab.windowId };
+  if (tab.openerTabId != null) opts.openerTabId = tab.openerTabId;
+  if (url && url !== 'about:blank' && url !== 'about:newtab') opts.url = url;
+
+  // A different container means a different content process, so recreating a
+  // tab here is a full page load, not a cheap metadata copy — for every tab
+  // in the panel at once, that's what was stalling the browser for several
+  // seconds. Load lazily (like applySnapshot's reopen does) for every tab
+  // except the one actually on screen right now, which Firefox won't let
+  // stay discarded anyway.
+  let created = null;
+  if (!tab.active && opts.url) {
+    const discardedOpts = { ...opts, discarded: true, title: tab.title || url };
+    try { created = await browser.tabs.create(discardedOpts); }
+    catch {
+      delete discardedOpts.openerTabId;
+      try { created = await browser.tabs.create(discardedOpts); } catch { created = null; }
+    }
+  }
+  if (!created) {
+    try { created = await browser.tabs.create(opts); }
+    catch {
+      delete opts.openerTabId;
+      try { created = await browser.tabs.create(opts); } catch { return null; }
+    }
+  }
+
+  markSelfTagged(created.id); // this panel may not be the active one — don't let onCreated re-tag it
+  if (panelId) await browser.sessions.setTabValue(created.id, 'panel', panelId);
+  if (savedGroup) await browser.sessions.setTabValue(created.id, 'savedGroup', savedGroup);
+  if (groupId != null) {
+    try { await browser.tabs.group({ groupId, tabIds: created.id }); } catch {}
+  }
+  if (tab.pinned) {
+    try { await browser.tabs.update(created.id, { pinned: true }); } catch {}
+    if (panelPinned) await browser.sessions.setTabValue(created.id, 'panelPinned', true);
+  }
+  if (tab.hidden) {
+    try { await browser.tabs.hide(created.id); } catch {}
+  }
+
+  try { await browser.tabs.remove(tab.id); } catch {}
+  return created;
+}
+
+// Move every tab currently tagged to a panel into a container (or back to
+// 'firefox-default' when the panel's link is cleared). Runs across all
+// windows since the panel tag isn't window-scoped. Tabs already in the
+// target container are left alone. Every matching tab is migrated
+// concurrently rather than one at a time — sequential processing meant each
+// tab's close+reopen (several round-trips apiece) queued up behind the last,
+// so a visible panel with a handful of tabs would visibly flicker tabs
+// closed-and-reopened for several seconds. Running them in parallel cuts
+// that down to roughly the time for one tab's worth of round-trips, at the
+// cost of scrambling tab order (concurrent creates/removes don't land in
+// their original slots) — fixed up below by replaying each replacement back
+// to its original index, ascending, once every migration has landed.
+async function reassignPanelTabsToContainer(panelId, cookieStoreId) {
+  if (!containersSupported()) return;
+  const allTabs = await browser.tabs.query({});
+  const isTarget = await Promise.all(allTabs.map(async (tab) => {
+    if (tab.cookieStoreId === cookieStoreId) return false;
+    return (await browser.sessions.getTabValue(tab.id, 'panel')) === panelId;
+  }));
+  const targets = allTabs.filter((_, i) => isTarget[i]);
+  const created = await Promise.all(targets.map(tab => moveTabToContainer(tab, cookieStoreId)));
+
+  // Replay each successfully-migrated tab back to the index its predecessor
+  // held, ascending — the standard trick for reconstructing an exact order
+  // via single-item moves: once the lower slots are pinned down, placing the
+  // next tab at its original index can't disturb them.
+  const restores = targets
+    .map((tab, i) => ({ id: created[i] && created[i].id, windowId: tab.windowId, index: tab.index }))
+    .filter(r => r.id != null)
+    .sort((a, b) => a.index - b.index);
+  for (const r of restores) {
+    try { await browser.tabs.move(r.id, { windowId: r.windowId, index: r.index }); } catch {}
+  }
+}
+
 // Count how many tabs are tagged to each panel (current window).
 async function panelTabCounts() {
   const tabs = await browser.tabs.query({ currentWindow: true });
@@ -203,8 +438,7 @@ async function switchPanel(targetPanel) {
   // Show the panel's tabs first — a hidden tab can't be made active, so we must
   // un-hide before focusing the one we want.
   if (tabsToShow.length === 0) {
-    const newTab = await browser.tabs.create({ active: true });
-    await browser.sessions.setTabValue(newTab.id, 'panel', targetPanel);
+    const newTab = await createTabForPanel(targetPanel, { active: true });
     tabsToShow.push(newTab.id);
   } else {
     await browser.tabs.show(tabsToShow);
@@ -239,18 +473,19 @@ async function switchPanel(targetPanel) {
   notifyChanged();
 }
 
-async function addPanel(name, icon, color) {
+async function addPanel(name, icon, color, containerId) {
   const { panels } = await getPanels();
   const panel = { id: uid(), name: name || 'Panel', icon: icon || '📄' };
   if (color) panel.color = color;
+  if (containerId) panel.containerId = containerId;
   panels.push(panel);
   await savePanels(panels);
   await switchPanel(panel.id); // switches + auto-creates new tab in empty panel
   return panel;
 }
 
-// color: undefined = leave as is, ''/null (when passed) = clear, hex = set.
-async function updatePanel(id, name, icon, color) {
+// color/containerId: undefined = leave as is, ''/null (when passed) = clear, value = set.
+async function updatePanel(id, name, icon, color, containerId) {
   const { panels, activePanel } = await getPanels();
   const panel = panels.find(p => p.id === id);
   if (!panel) return;
@@ -260,8 +495,18 @@ async function updatePanel(id, name, icon, color) {
     if (color) panel.color = color;
     else delete panel.color;
   }
+  let containerChanged = false;
+  if (containerId !== undefined) {
+    containerChanged = (panel.containerId || '') !== (containerId || '');
+    if (containerId) panel.containerId = containerId;
+    else delete panel.containerId;
+  }
   await savePanels(panels);
   if (color !== undefined && id === activePanel) applyPanelTheme(id);
+  // Linking/unlinking a container moves this panel's existing tabs too, not
+  // just future ones — otherwise old tabs would sit stranded in the old
+  // container while new tabs open in the new one.
+  if (containerChanged) await reassignPanelTabsToContainer(id, containerId || 'firefox-default');
   notifyChanged();
 }
 
@@ -540,22 +785,25 @@ async function applySnapshot(snapshot) {
   const opened = [];
   for (const { url, panelId, title } of toOpen) {
     let t;
+    const cookieStoreId = await containerForPanel(panelId);
+    const containerOpt = cookieStoreId ? { cookieStoreId } : {};
     try {
       // title must be non-empty or older Firefox silently drops the discarded
       // flag and loads the page; fall back to the URL as the label.
-      t = await browser.tabs.create({ url, active: false, discarded: true, title: title || url });
+      t = await browser.tabs.create({ url, active: false, discarded: true, title: title || url, ...containerOpt });
     } catch {
       // Some URLs can't be created discarded (e.g. title mismatch); fall back.
-      t = await browser.tabs.create({ url, active: false });
+      t = await browser.tabs.create({ url, active: false, ...containerOpt });
     }
+    markSelfTagged(t.id); // panelId here is the snapshot's, not necessarily the active panel
     await browser.sessions.setTabValue(t.id, 'panel', panelId);
     opened.push(t);
   }
 
   // Guarantee at least one tab stays open before we remove anything.
   if (toClose.length === currentTabs.length && toRetag.length === 0 && opened.length === 0) {
-    const t = await browser.tabs.create({ active: true });
-    await browser.sessions.setTabValue(t.id, 'panel', fallback);
+    const t = await createTabForPanel(fallback, { active: true });
+    opened.push(t);
   }
 
   // If the active tab is being closed, focus something that will survive.
@@ -729,8 +977,7 @@ async function moveTabsToPanel(tabIds, panelId) {
         if (p === activePanel) { target = t.id; break; }
       }
       if (target == null) {
-        const newTab = await browser.tabs.create({ active: true });
-        await browser.sessions.setTabValue(newTab.id, 'panel', activePanel);
+        await createTabForPanel(activePanel, { active: true });
       } else {
         await browser.tabs.update(target, { active: true });
       }
@@ -953,9 +1200,28 @@ async function groupSubtab(tab) {
   } catch { /* grouping is best-effort; ignore failures */ }
 }
 
-// Tag every new tab with the currently active panel; group sub-tabs if enabled.
+// Tag every new tab with the currently active panel; steer it into the
+// panel's linked container if it didn't already land there; group sub-tabs
+// if enabled.
 browser.tabs.onCreated.addListener(async (tab) => {
+  // Houdini already created and fully tagged this tab itself (for a specific,
+  // possibly non-active panel) — don't let the active-panel logic below touch it.
+  if (selfTaggedTabs.has(tab.id)) return;
+
   const panelId = activePanelCache || (await getPanels()).activePanel;
+
+  // Private-browsing tabs can't be moved into a regular container, and
+  // freshly-restored session tabs shouldn't be thrashed on browser startup.
+  if (!tab.incognito && !isStartupSettling()) {
+    const cookieStoreId = await containerForPanel(panelId);
+    if (cookieStoreId && tab.cookieStoreId !== cookieStoreId) {
+      const replacement = await reassignContainer(tab, cookieStoreId);
+      // The replacement fires its own onCreated with a matching cookieStoreId,
+      // which tags + groups it below — nothing left to do for this original tab.
+      if (replacement) return;
+    }
+  }
+
   await browser.sessions.setTabValue(tab.id, 'panel', panelId);
   if (await getGroupSubtabs()) await groupSubtab(tab);
 });
@@ -968,8 +1234,8 @@ browser.runtime.onMessage.addListener(async (msg) => {
       return state;
     }
     case 'switch':       return switchPanel(msg.panelId);
-    case 'add':          return addPanel(msg.name, msg.icon, msg.color);
-    case 'update':       return updatePanel(msg.id, msg.name, msg.icon, msg.color);
+    case 'add':          return addPanel(msg.name, msg.icon, msg.color, msg.containerId);
+    case 'update':       return updatePanel(msg.id, msg.name, msg.icon, msg.color, msg.containerId);
     case 'remove':       return removePanel(msg.id);
     case 'reorder':      return reorderPanels(msg.order);
     case 'migrate':      return migrateFromSidebery(msg.backup);
@@ -992,7 +1258,11 @@ browser.runtime.onMessage.addListener(async (msg) => {
     case 'focusTab':     return focusTab(msg.tabId);
     case 'activateTab':  return browser.tabs.update(msg.tabId, { active: true });
     case 'closeTab':     return browser.tabs.remove(msg.tabId);
-    case 'newTab':       return browser.tabs.create({ active: true });
+    case 'newTab': {
+      const { activePanel } = await getPanels();
+      return createTabForPanel(activePanel, { active: true });
+    }
+    case 'listContainers': return { supported: containersSupported(), containers: await listContainers() };
     case 'togglePanelPin': {
       const t = await browser.tabs.get(msg.tabId).catch(() => null);
       return togglePanelPin(t);
