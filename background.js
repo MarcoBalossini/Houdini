@@ -1208,6 +1208,15 @@ browser.tabs.onCreated.addListener(async (tab) => {
   // possibly non-active panel) — don't let the active-panel logic below touch it.
   if (selfTaggedTabs.has(tab.id)) return;
 
+  // Firefox fires onCreated for every tab it restores from the previous
+  // session too, each already carrying its old panel tag in session storage
+  // (that store survives restarts independently of this listener). Only
+  // truly new tabs — no existing tag — should be adopted into the active
+  // panel; otherwise every browser restart would reset all tabs to whichever
+  // panel happened to be active, wiping panel assignments wholesale.
+  const existingPanelId = await browser.sessions.getTabValue(tab.id, 'panel');
+  if (existingPanelId != null) return;
+
   const panelId = activePanelCache || (await getPanels()).activePanel;
 
   // Private-browsing tabs can't be moved into a regular container, and
