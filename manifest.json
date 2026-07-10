@@ -57,6 +57,10 @@
     "_execute_action": {
       "suggested_key": { "default": "Alt+P" }
     },
+    "take-snapshot": {
+      "suggested_key": { "default": "Alt+S" },
+      "description": "Take a snapshot now"
+    },
     "switch-panel-1": { "description": "Switch to panel 1" },
     "switch-panel-2": { "description": "Switch to panel 2" },
     "switch-panel-3": { "description": "Switch to panel 3" },

@@ -716,10 +716,31 @@ async function getSnapshotSettings() {
 async function captureState() {
   const { panels, activePanel } = await getPanels();
   const tabs = await browser.tabs.query({});
+  const groupsOn = tabGroupsSupported();
   const tabAssignments = [];
   for (const tab of tabs) {
     const panelId = await browser.sessions.getTabValue(tab.id, 'panel');
-    if (panelId) tabAssignments.push({ url: normalizeUrl(tab.url), panelId, title: tab.title || '' });
+    if (!panelId) continue;
+    const panelPinned = (await browser.sessions.getTabValue(tab.id, 'panelPinned')) === true;
+
+    // Native group ids are per-session, so a raw groupId is worthless after a
+    // browser restart. Store the group's identity (title/color/collapsed) plus
+    // a snapshot-local key that clusters the tabs sharing it. Visible tabs read
+    // it live; hidden (non-active-panel) tabs carry it in their savedGroup value.
+    let group = null;
+    if (groupsOn) {
+      const liveGid = (tab.groupId != null && tab.groupId !== -1) ? tab.groupId : null;
+      if (liveGid != null) {
+        let title = '', color = '', collapsed = false;
+        try { const g = await browser.tabGroups.get(liveGid); title = g.title || ''; color = g.color || ''; collapsed = g.collapsed || false; } catch {}
+        group = { key: liveGid, title, color, collapsed };
+      } else {
+        const saved = await browser.sessions.getTabValue(tab.id, 'savedGroup');
+        if (saved) group = { key: saved.groupId, title: saved.title || '', color: saved.color || '', collapsed: saved.collapsed === true };
+      }
+    }
+
+    tabAssignments.push({ url: normalizeUrl(tab.url), panelId, title: tab.title || '', pinned: tab.pinned === true, panelPinned, group });
   }
   return {
     timestamp: Date.now(),
@@ -741,6 +762,42 @@ async function takeSnapshot() {
   return { ok: true, snapshot };
 }
 
+// Bring one surviving tab's pin/group state in line with its snapshot entry,
+// leaving the final switchPanel to do the actual show/hide/pin/group. Native
+// pin is cleared for anything that isn't a global pin: switchPanel reads a
+// pinned-but-unflagged tab as a global pin and would never touch it, so a
+// stale native pin has to go before the switch. Per-panel pins and groups are
+// recorded as session values (panelPinned / savedGroup) that switchPanel and
+// restoreGroups consume.
+async function reconcileTabState(tab, entry) {
+  const desiredGlobal = entry.pinned && !entry.panelPinned;
+
+  if (tabGroupsSupported()) {
+    // Drop any live native group and stale saved value, then record the wanted
+    // group so switchPanel/restoreGroups can rebuild it from a clean slate.
+    if (tab.groupId != null && tab.groupId !== -1) {
+      try { await browser.tabs.ungroup(tab.id); } catch {}
+    }
+    if (entry.group) {
+      await browser.sessions.setTabValue(tab.id, 'savedGroup', { groupId: entry.group.key, title: entry.group.title, color: entry.group.color, collapsed: entry.group.collapsed });
+    } else {
+      await browser.sessions.removeTabValue(tab.id, 'savedGroup');
+    }
+  }
+
+  if (entry.pinned && entry.panelPinned) {
+    await browser.sessions.setTabValue(tab.id, 'panelPinned', true);
+  } else {
+    await browser.sessions.removeTabValue(tab.id, 'panelPinned');
+  }
+
+  if (desiredGlobal) {
+    if (!tab.pinned) { try { await browser.tabs.update(tab.id, { pinned: true }); } catch {} }
+  } else if (tab.pinned) {
+    try { await browser.tabs.update(tab.id, { pinned: false }); } catch {}
+  }
+}
+
 // Restore a captured state: replace panels, re-tag tabs to match (reopen tabs
 // closed since, close tabs opened since). Shared by rollback and import.
 async function applySnapshot(snapshot) {
@@ -755,18 +812,21 @@ async function applySnapshot(snapshot) {
   const snapLeft = snapshot.tabAssignments.map(a => ({
     url: a.url,
     title: a.title || '',
-    panelId: validIds.has(a.panelId) ? a.panelId : fallback
+    panelId: validIds.has(a.panelId) ? a.panelId : fallback,
+    pinned: a.pinned === true,
+    panelPinned: a.panelPinned === true,
+    group: a.group || null
   }));
 
   const currentTabs = await browser.tabs.query({});
   const toClose = [];
-  const toRetag = []; // { tabId, panelId }
+  const toRetag = []; // { tab, entry }
 
   for (const tab of currentTabs) {
     const normalUrl = normalizeUrl(tab.url);
     const matchIdx = snapLeft.findIndex(a => a.url === normalUrl);
     if (matchIdx !== -1) {
-      toRetag.push({ tabId: tab.id, panelId: snapLeft[matchIdx].panelId });
+      toRetag.push({ tab, entry: snapLeft[matchIdx] });
       snapLeft.splice(matchIdx, 1);
     } else {
       toClose.push(tab);
@@ -776,14 +836,17 @@ async function applySnapshot(snapshot) {
   // Remaining snapLeft entries have no current tab -> reopen (http/https only).
   const toOpen = snapLeft.filter(a => /^https?:\/\//.test(a.url));
 
-  for (const { tabId, panelId } of toRetag) {
-    await browser.sessions.setTabValue(tabId, 'panel', panelId);
+  // Surviving tabs: re-tag to their snapshot panel, then reconcile pin/group
+  // state so a rollback also undoes pins and grouping, not just panel moves.
+  for (const { tab, entry } of toRetag) {
+    await browser.sessions.setTabValue(tab.id, 'panel', entry.panelId);
+    await reconcileTabState(tab, entry);
   }
 
   // Open missing tabs.
   // they load lazily on first focus to avoid OOM.
   const opened = [];
-  for (const { url, panelId, title } of toOpen) {
+  for (const { url, panelId, title, pinned, panelPinned, group } of toOpen) {
     let t;
     const cookieStoreId = await containerForPanel(panelId);
     const containerOpt = cookieStoreId ? { cookieStoreId } : {};
@@ -797,6 +860,25 @@ async function applySnapshot(snapshot) {
     }
     markSelfTagged(t.id); // panelId here is the snapshot's, not necessarily the active panel
     await browser.sessions.setTabValue(t.id, 'panel', panelId);
+
+    // Reapply the pin/group state the snapshot carried. A tab is either pinned
+    // or grouped, never both, so these branches are exclusive.
+    if (pinned && panelPinned) {
+      // Per-panel pin: the session flag is the durable truth; the closing
+      // switchPanel pins the native tab if this is the active panel, and the
+      // pin is applied later when the user first opens the panel otherwise.
+      await browser.sessions.setTabValue(t.id, 'panelPinned', true);
+    } else if (pinned) {
+      // Global pin: lives in every panel and switchPanel never touches it, so
+      // pin the native tab here.
+      try { await browser.tabs.update(t.id, { pinned: true }); } catch {}
+    } else if (group) {
+      // Store group intent as a savedGroup value. The closing switchPanel call
+      // rebuilds real groups for the active panel via restoreGroups; other
+      // panels rebuild lazily the first time they're shown.
+      await browser.sessions.setTabValue(t.id, 'savedGroup', { groupId: group.key, title: group.title, color: group.color, collapsed: group.collapsed });
+    }
+
     opened.push(t);
   }
 
@@ -809,7 +891,7 @@ async function applySnapshot(snapshot) {
   // If the active tab is being closed, focus something that will survive.
   const activeTab = currentTabs.find(t => t.active);
   if (activeTab && toClose.some(t => t.id === activeTab.id)) {
-    const safeId = toRetag.length ? toRetag[0].tabId : (opened.length ? opened[0].id : null);
+    const safeId = toRetag.length ? toRetag[0].tab.id : (opened.length ? opened[0].id : null);
     if (safeId) await browser.tabs.update(safeId, { active: true });
   }
 
@@ -921,10 +1003,23 @@ async function switchPanelByIndex(idx) {
   if (panels[idx]) await switchPanel(panels[idx].id);
 }
 
+// Flash a short-lived badge on the toolbar button to confirm a background
+// action the user can't otherwise see happened. Best-effort: the badge clears
+// itself, but the event page may unload before the timer fires.
+async function flashBadge(text) {
+  if (!browser.action || !browser.action.setBadgeText) return;
+  try {
+    await browser.action.setBadgeBackgroundColor({ color: '#3b82f6' });
+    await browser.action.setBadgeText({ text });
+    setTimeout(() => { try { browser.action.setBadgeText({ text: '' }); } catch {} }, 1500);
+  } catch {}
+}
+
 if (browser.commands) {
   browser.commands.onCommand.addListener((cmd) => {
     if (cmd === 'next-panel') return cyclePanel(1);
     if (cmd === 'prev-panel') return cyclePanel(-1);
+    if (cmd === 'take-snapshot') return takeSnapshot().then(() => flashBadge('✓')).catch(() => {});
     const m = /^switch-panel-(\d+)$/.exec(cmd);
     if (m) return switchPanelByIndex(parseInt(m[1], 10) - 1);
   });
